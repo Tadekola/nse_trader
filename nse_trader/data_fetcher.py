@@ -201,7 +201,12 @@ class NSEDataFetcher:
             return {}
 
     def get_historical_data(self, symbol: str, interval: str = '1d', lookback: int = 30) -> List[Dict]:
-        """Fetch historical data for a given stock symbol."""
+        """
+        Fetch raw synthetic historical data for a given stock symbol.
+        NOTE: This method generates synthetic historical data based on the current day's
+        OHLCV values from the provider and projects it backwards with random variations.
+        It does not fetch true, independent historical data points.
+        """
         try:
             # Map interval string to TradingView interval
             interval_mapping = {
@@ -271,8 +276,26 @@ class NSEDataFetcher:
                     'volume': volume
                 })
                 
+            return history
+            
+        except Exception as e:
+            logger.error(f"Error fetching raw historical data for {symbol}: {str(e)}")
+            return []
+
+    def get_historical_data(self, symbol: str, interval: str = '1d', lookback: int = 30) -> Dict:
+        """Fetch historical data for a given stock symbol and calculate entry/exit points."""
+        try:
+            # Get raw historical data
+            history = self._get_raw_historical_data(symbol, interval, lookback)
+            
+            if not history:
+                 return {
+                    'historical_data': [],
+                    'entry_exit_points': {} # Default if no history
+                }
+
             # Calculate entry/exit points and add to response
-            entry_exit = self.calculate_entry_exit_points(symbol)
+            entry_exit = self.calculate_entry_exit_points(symbol, historical_data_input=history)
             
             return {
                 'historical_data': history,
@@ -281,9 +304,9 @@ class NSEDataFetcher:
             
         except Exception as e:
             logger.error(f"Error fetching historical data for {symbol}: {str(e)}")
-            return []
+            return {'historical_data': [], 'entry_exit_points': {}}
     
-    def calculate_entry_exit_points(self, symbol):
+    def calculate_entry_exit_points(self, symbol, historical_data_input: Optional[List[Dict]] = None):
         """
         Calculate entry and exit points for a given stock based on technical analysis.
         
@@ -298,7 +321,12 @@ class NSEDataFetcher:
             real_price = self.get_real_time_price(symbol)
             
             # Get historical data for technical indicators
-            historical_data = self.get_historical_data(symbol)
+            # Use provided historical data if available, otherwise fetch it
+            if historical_data_input is None:
+                # Call the internal method to avoid recursion with the public get_historical_data
+                historical_data = self._get_raw_historical_data(symbol) 
+            else:
+                historical_data = historical_data_input
             
             # Create technical analyzer instance
             analyzer = TechnicalAnalyzer()
