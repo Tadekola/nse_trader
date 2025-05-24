@@ -31,7 +31,6 @@ def create_app(config_class=Config):
     def market_summary():
         """Get NSE market summary data."""
         try:
-            data_fetcher = NSEDataFetcher()
             summary = data_fetcher.get_market_summary()
             
             # Ensure all expected fields exist
@@ -221,6 +220,7 @@ def create_app(config_class=Config):
             result['justification'] = ', '.join(factors)
             
             # Ensure all required fields exist
+            # Ensure all required fields exist - corrected indentation
             if 'price' not in result:
                 result['price'] = 100.0
             if 'stop_loss' not in result:

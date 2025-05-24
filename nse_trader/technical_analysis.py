@@ -186,16 +186,191 @@ class TechnicalAnalyzer:
         Returns:
             float: EMA value
         """
-        if isinstance(prices, list) and len(prices) < period:
-            return sum(prices) / len(prices)
-            
-        ema = sum(prices[:period]) / period
-        multiplier = 2 / (period + 1)
+        if not isinstance(prices, np.ndarray):
+            prices_arr = np.array(prices, dtype=float)
+        else:
+            prices_arr = prices
+
+        if len(prices_arr) < period:
+            # Return a simple moving average if not enough data for full EMA
+            # Or handle as an error/default value more appropriate for series
+            # For now, returning an array of NaNs or simple averages
+            # Let's return simple average for initial values, then NaN for the rest
+            if len(prices_arr) == 0:
+                return np.array([]) # or raise error
+            sma = np.convolve(prices_arr, np.ones(period)/period, mode='valid')
+            # This is not a full EMA series, but for simplicity if period is too short:
+            # We need 'period' values to start a proper EMA.
+            # For now, let's ensure it returns an array.
+            # A robust EMA calculation for a series usually starts after 'period' elements.
+            # The original code returned a single scalar (last EMA value).
+            # If we need a series, pandas.ewm is much easier.
+            # Let's stick to the original formula's spirit for series:
+            ema_series = np.empty_like(prices_arr)
+            ema_series[:] = np.nan
+            if len(prices_arr) >= period:
+                ema_series[period-1] = np.mean(prices_arr[:period])
+                multiplier = 2 / (period + 1)
+                for i in range(period, len(prices_arr)):
+                    ema_series[i] = (prices_arr[i] - ema_series[i-1]) * multiplier + ema_series[i-1]
+            return ema_series # Returns full series, including NaNs for initial part
+
+    def calculate_macd(self, prices, fast=12, slow=26, signal=9):
+        """
+        Calculate Moving Average Convergence Divergence (MACD)
         
-        for i in range(period, len(prices)):
-            ema = (prices[i] - ema) * multiplier + ema
+        Args:
+            prices (list): List of closing prices
+            fast (int): Fast EMA period
+            slow (int): Slow EMA period
+            signal (int): Signal EMA period
             
-        return ema
+        Returns:
+            dict: Dictionary with macd_line, signal_line, and histogram values
+        """
+        prices_arr = np.array(prices, dtype=float)
+        if len(prices_arr) < slow + signal: # A more robust check considering sequence needed for signal line
+            return {
+                'macd_line': 0,
+                'signal_line': 0,
+                'histogram': 0,
+                'signal': 'neutral'
+            }
+            
+        # Calculate fast EMA series
+        ema_fast_series = self._calculate_ema(prices_arr, fast)
+        
+        # Calculate slow EMA series
+        ema_slow_series = self._calculate_ema(prices_arr, slow)
+        
+        # Calculate MACD line series (ensure alignment, remove leading NaNs)
+        # Find first valid index after both EMAs are calculated
+        first_valid_idx = max(fast -1, slow -1) # index where both ema_fast and ema_slow are non-NaN
+        
+        macd_line_series = ema_fast_series[first_valid_idx:] - ema_slow_series[first_valid_idx:]
+        
+        # Calculate signal line series from MACD line series
+        # The _calculate_ema needs to handle already differenced series correctly
+        # For MACD, the signal line is an EMA of the MACD line itself.
+        signal_line_series = self._calculate_ema(macd_line_series, signal) # This will have leading NaNs
+        
+        # Get the latest values
+        latest_macd_line = macd_line_series[-1] if len(macd_line_series) > 0 else 0
+        latest_signal_line = signal_line_series[-1] if len(signal_line_series) > 0 and not np.isnan(signal_line_series[-1]) else 0
+        
+        # Calculate histogram
+        latest_histogram = latest_macd_line - latest_signal_line
+        
+        # Determine signal
+        signal_type = 'neutral'
+        if latest_macd_line > latest_signal_line:
+            signal_type = 'buy'
+        elif latest_macd_line < latest_signal_line:
+            signal_type = 'sell'
+            
+        return {
+            'macd_line': latest_macd_line,
+            'signal_line': latest_signal_line,
+            'histogram': latest_histogram,
+            'signal': signal_type
+        }
+        
+    def calculate_bollinger_bands(self, prices, period=20, std_dev=2):
+        """
+        Calculate Bollinger Bands
+        
+        Args:
+            prices (list): List of closing prices
+            period (int): Period for SMA
+            std_dev (int): Number of standard deviations
+            
+        Returns:
+            dict: Dictionary with upper_band, middle_band, lower_band, and band_width
+        """
+        if len(prices) < period:
+            current_price_fallback = prices[-1] if prices else 0
+            return {
+                'upper_band': current_price_fallback * 1.1,
+                'middle_band': current_price_fallback,
+                'lower_band': current_price_fallback * 0.9,
+                'band_width': 0.2,
+                'signal': 'neutral'
+            }
+            
+        # Calculate middle band (SMA)
+        middle_band = sum(prices[-period:]) / period
+        
+        # Calculate standard deviation
+        std = np.std(prices[-period:])
+        
+        # Calculate upper and lower bands
+        upper_band = middle_band + (std_dev * std)
+        lower_band = middle_band - (std_dev * std)
+        
+        # Calculate band width
+        band_width = (upper_band - lower_band) / middle_band if middle_band != 0 else 0
+        
+        # Determine signal
+        signal_type = 'neutral'
+        current_price = prices[-1]
+        
+        if current_price > upper_band:
+            signal_type = 'sell'
+        elif current_price < lower_band:
+            signal_type = 'buy'
+            
+        return {
+            'upper_band': upper_band,
+            'middle_band': middle_band,
+            'lower_band': lower_band,
+            'band_width': band_width,
+            'signal': signal_type
+        }
+        
+    def calculate_momentum(self, prices, period=14):
+        """
+        Calculate Momentum indicator
+        
+        Args:
+            prices (list): List of closing prices
+            period (int): Period for momentum
+            
+        Returns:
+            float: Momentum value
+        """
+        if len(prices) <= period: # prices[-1] and prices[-period-1] must be valid
+            return 0
+            
+        # Momentum = Current Price - Price N periods ago
+        # Ensure indexing is correct: prices[-1] is current, prices[-1-period] is N periods ago.
+        momentum = prices[-1] - prices[-1-period] 
+        
+        return momentum
+        
+    def _calculate_ema(self, prices_arr: np.ndarray, period: int) -> np.ndarray:
+        """
+        Calculate Exponential Moving Average series.
+        
+        Args:
+            prices_arr (np.ndarray): Array of prices
+            period (int): EMA period
+            
+        Returns:
+            np.ndarray: EMA series, with leading NaNs
+        """
+        ema_series = np.empty_like(prices_arr, dtype=float)
+        ema_series[:] = np.nan
+
+        if len(prices_arr) >= period:
+            # Calculate initial SMA for the first EMA value
+            ema_series[period - 1] = np.mean(prices_arr[:period])
+            
+            multiplier = 2 / (period + 1)
+            
+            for i in range(period, len(prices_arr)):
+                ema_series[i] = (prices_arr[i] - ema_series[i-1]) * multiplier + ema_series[i-1]
+                
+        return ema_series
         
     def analyze_stock(self, prices):
         """
