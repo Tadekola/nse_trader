@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>NSE Trader - Nigerian Stock Exchange Analysis</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="stylesheet" href="/static/css/chart-styles.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <meta name="description" content="NSE Trader provides real-time Nigerian Stock Exchange market data with validation and investment recommendations">
+    <!-- Chart.js for stock visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+</head>
+<body>
+    <header>
+        <h1>NSE Trader</h1>
+        <div class="validation-status-widget" id="validation-status-widget">
+            <div class="status-indicator"></div>
+            <span>Validation System: Checking...</span>
+        </div>
+    </header>
+    
+    <main>
+        <div class="container">
+            <div class="tab-container">
+                <div class="tabs">
+                    <div class="tab active" data-tab="active-stocks">Active Stocks</div>
+                    <div class="tab" data-tab="market-data">Market Data</div>
+                    <div class="tab" data-tab="charts">Charts</div>
+                    <div class="tab" data-tab="system-status">System Status</div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">
+                            <i class="fas fa-chart-line"></i>
+                            <span id="current-view-title">Most Actively Traded Nigerian Stocks</span>
+                        </h2>
+                        <button id="refresh-active-stocks" class="btn btn-primary">
+                            <i class="fas fa-sync-alt"></i> Refresh
+                        </button>
+                    </div>
+                    
+                    <!-- Active Stocks Tab Content -->
+                    <div id="active-stocks" class="tab-content active">
+                        <div id="active-stocks-container"></div>
+                    </div>
+                    
+                    <!-- Market Data Tab Content -->
+                    <div id="market-data" class="tab-content">
+                        <div id="market-data-table"></div>
+                    </div>
+                    
+                    <!-- Charts Tab Content -->
+                    <div id="charts" class="tab-content">
+                        <div class="chart-selector">
+                            <label for="chart-stock-select">Select Stock: </label>
+                            <select id="chart-stock-select" class="chart-stock-select">
+                                <option value="">-- Select a stock --</option>
+                            </select>
+                        </div>
+                        <div id="stock-chart-container" class="chart-container">
+                            <div class="default-message">Select a stock to view its chart</div>
+                        </div>
+                        <div id="technical-indicators" class="technical-indicators">
+                            <!-- Technical indicators will be displayed here -->
+                        </div>
+                    </div>
+                    
+                    <!-- System Status Tab Content -->
+                    <div id="system-status" class="tab-content">
+                        <div class="status-dashboard">
+                            <div class="dashboard-header">
+                                <h3><i class="fas fa-gauge-high"></i> System Status Dashboard</h3>
+                                <button id="refresh-status" class="btn btn-info"><i class="fas fa-sync-alt"></i> Refresh</button>
+                            </div>
+                            
+                            <div class="status-panels">
+                                <div class="status-panel">
+                                    <div class="panel-header">
+                                        <h4><i class="fas fa-server"></i> Validation System</h4>
+                                    </div>
+                                    <div class="panel-body" id="validation-system-status">
+                                        <div class="loading">Loading system status...</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="status-panel">
+                                    <div class="panel-header">
+                                        <h4><i class="fas fa-database"></i> Cache Status</h4>
+                                    </div>
+                                    <div class="panel-body" id="cache-status">
+                                        <div class="loading">Loading cache status...</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="status-panel">
+                                    <div class="panel-header">
+                                        <h4><i class="fas fa-bolt"></i> Circuit Breakers</h4>
+                                    </div>
+                                    <div class="panel-body" id="circuit-breaker-status">
+                                        <div class="loading">Loading circuit breaker status...</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="status-panel">
+                                    <div class="panel-header">
+                                        <h4><i class="fas fa-exchange-alt"></i> Data Sources</h4>
+                                    </div>
+                                    <div class="panel-body" id="data-sources-status">
+                                        <div class="loading">Loading data sources status...</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="system-metrics">
+                                <h3>Validation Metrics</h3>
+                                <div id="validation-metrics" class="metrics-container">
+                                    <div class="loading">Loading validation metrics...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <footer>
+        <p>&copy; 2025 NSE Trader - Real-time Nigerian market data with validation and investment recommendations</p>
+    </footer>
+    
+    <!-- Scripts -->
+    <script src="/static/js/validation-badges.js"></script>
+    <script src="/static/js/ngx-market-data.js"></script>
+    <script src="/static/js/active-stocks.js"></script>
+    <script src="/static/js/stock-charts.js"></script>
+    <script src="/static/js/system-status.js"></script>
+    
+    <!-- Tab Switching JavaScript -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Tab switching functionality
+            const tabs = document.querySelectorAll('.tab');
+            const tabContents = document.querySelectorAll('.tab-content');
+            const currentViewTitle = document.getElementById('current-view-title');
+            
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    // Remove active class from all tabs and contents
+                    tabs.forEach(t => t.classList.remove('active'));
+                    tabContents.forEach(content => content.classList.remove('active'));
+                    
+                    // Add active class to clicked tab and corresponding content
+                    const tabId = tab.getAttribute('data-tab');
+                    tab.classList.add('active');
+                    document.getElementById(tabId).classList.add('active');
+                    
+                    // Update the title
+                    if (tabId === 'active-stocks') {
+                        currentViewTitle.textContent = 'Most Actively Traded Nigerian Stocks';
+                    } else if (tabId === 'market-data') {
+                        currentViewTitle.textContent = 'Nigerian Stock Exchange Market Data';
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>

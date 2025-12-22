@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nse_trader_backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend/app:/app/app # Mount app code for hot-reloading
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env # Load environment variables from .env file
+    environment:
+      # Override settings from .env if needed, especially for service discovery
+      - REDIS_HOST=redis
+      - RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - redis
+      - rabbitmq
+    networks:
+      - nse_trader_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      # Pass build arguments if needed (e.g., API URL)
+      # args:
+      #   - VITE_API_BASE_URL=http://localhost:8000/api/v1
+    container_name: nse_trader_frontend
+    ports:
+      - "8080:80" # Map container port 80 to host port 8080
+    depends_on:
+      - backend # Frontend might need backend to be up
+    networks:
+      - nse_trader_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: nse_trader_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - nse_trader_network
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: nse_trader_rabbitmq
+    ports:
+      - "5672:5672" # AMQP port
+      - "15672:15672" # Management UI port
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq/
+    # Set default user/password if needed (align with .env)
+    # environment:
+    #   - RABBITMQ_DEFAULT_USER=guest
+    #   - RABBITMQ_DEFAULT_PASS=guest
+    networks:
+      - nse_trader_network
+
+  # --- Worker Service (Uncomment and configure when ready) ---
+  # worker:
+  #   build:
+  #     context: ./backend # Worker uses the same backend image
+  #     dockerfile: Dockerfile
+  #   container_name: nse_trader_worker
+  #   command: celery -A app.workers.celery_app worker --loglevel=info
+  #   volumes:
+  #     - ./backend/app:/app/app # Mount code for consistency
+  #   env_file:
+  #     - ./backend/.env
+  #   environment:
+  #     - REDIS_HOST=redis
+  #     - RABBITMQ_HOST=rabbitmq
+  #   depends_on:
+  #     - redis
+  #     - rabbitmq
+  #     - backend # May need backend models/logic
+  #   networks:
+  #     - nse_trader_network
+
+networks:
+  nse_trader_network:
+    driver: bridge
+
+volumes:
+  redis_data:
+    driver: local
+  rabbitmq_data:
+    driver: local

@@ -1,0 +1,103 @@
+/* Chart Styles for NSE Trader */
+
+.chart-container {
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    padding: 15px;
+    margin: 20px 0;
+}
+
+.chart-tabs {
+    display: flex;
+    border-bottom: 1px solid #e0e0e0;
+    margin-bottom: 15px;
+}
+
+.chart-tab {
+    padding: 8px 16px;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    transition: var(--transition);
+    font-size: 14px;
+}
+
+.chart-tab.active {
+    border-bottom-color: var(--secondary-color);
+    font-weight: bold;
+}
+
+.chart-legend {
+    display: flex;
+    justify-content: center;
+    margin-top: 15px;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    font-size: 12px;
+}
+
+.legend-color {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    margin-right: 5px;
+}
+
+.technical-indicators {
+    margin-top: 20px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 15px;
+}
+
+.indicator-card {
+    background-color: #f8f9fa;
+    border-radius: 6px;
+    padding: 12px;
+    text-align: center;
+}
+
+.indicator-title {
+    font-size: 12px;
+    font-weight: bold;
+    margin-bottom: 8px;
+    color: var(--primary-color);
+}
+
+.indicator-value {
+    font-size: 16px;
+    font-weight: bold;
+}
+
+.indicator-value.positive {
+    color: var(--success-color);
+}
+
+.indicator-value.negative {
+    color: var(--danger-color);
+}
+
+.indicator-value.neutral {
+    color: var(--info-color);
+}
+
+/* Responsive chart styles */
+@media (max-width: 768px) {
+    .chart-container {
+        padding: 10px;
+    }
+    
+    .chart-tab {
+        padding: 6px 12px;
+        font-size: 12px;
+    }
+    
+    .technical-indicators {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
