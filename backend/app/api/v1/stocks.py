@@ -74,7 +74,7 @@ class MarketSummaryResponse(BaseModel):
     meta: Optional[Dict[str, Any]] = None
 
 
-@router.get("/", response_model=StockListResponse)
+@router.get("", response_model=StockListResponse)
 async def get_all_stocks(
     sector: Optional[str] = Query(None, description="Filter by sector"),
     liquidity: Optional[str] = Query(None, description="Filter by liquidity tier: high, medium, low")
