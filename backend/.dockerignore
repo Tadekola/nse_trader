@@ -18,3 +18,10 @@ venv/
 .mypy_cache/
 
 .env
+
+# Don't copy data DBs into image — they live in a Docker volume
+data/
+tests/
+_*.py
+check_*.py
+nse_trader_dev.db

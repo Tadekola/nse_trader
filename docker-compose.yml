@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # ── PostgreSQL (audit trail, portfolios) ──────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: nse_trader_postgres
@@ -8,54 +9,61 @@ services:
       POSTGRES_USER: nse_trader
       POSTGRES_PASSWORD: nse_trader
       POSTGRES_DB: nse_trader
-    ports:
-      - "5432:5432"
+    # No host port — only backend needs access via Docker network
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - nse_trader_network
+      - nse_net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U nse_trader"]
       interval: 5s
       timeout: 5s
       retries: 5
 
+  # ── Backend (FastAPI + background tasks) ──────────────────────────
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: nse_trader_backend
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
     volumes:
-      - ./backend/app:/app/app
+      # Bind-mount local data dir so existing SQLite DBs are available
+      # and new data persists across container restarts
       - ./backend/data:/app/data
     ports:
-      - "8001:8000"
-    env_file:
-      - ./backend/.env
+      - "8000:8000"
     environment:
       - DATABASE_URL=postgresql+asyncpg://nse_trader:nse_trader@postgres:5432/nse_trader
       - DATABASE_URL_SYNC=postgresql+psycopg2://nse_trader:nse_trader@postgres:5432/nse_trader
+      - ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3002,http://frontend:3000
+      - ENV=production
     depends_on:
       postgres:
         condition: service_healthy
     networks:
-      - nse_trader_network
+      - nse_net
 
+  # ── Frontend (Next.js) ────────────────────────────────────────────
   frontend:
     build:
-      context: ./frontend
+      context: ./frontend-next
       dockerfile: Dockerfile
+      args:
+        BACKEND_URL: http://backend:8000
     container_name: nse_trader_frontend
+    restart: unless-stopped
     ports:
-      - "8080:80"
+      - "3000:3000"
+    environment:
+      - BACKEND_URL=http://backend:8000
     depends_on:
       - backend
     networks:
-      - nse_trader_network
+      - nse_net
 
 networks:
-  nse_trader_network:
+  nse_net:
     driver: bridge
 
 volumes:

@@ -1,0 +1,45 @@
+# Core web framework
+fastapi==0.128.4
+uvicorn==0.40.0
+starlette==0.52.1
+slowapi==0.1.9
+
+# Database
+SQLAlchemy==2.0.46
+asyncpg==0.31.0
+aiosqlite==0.22.1
+psycopg2-binary==2.9.11
+alembic==1.18.3
+greenlet==3.3.1
+
+# Data processing
+numpy==2.4.2
+pandas==3.0.1
+
+# HTTP client (for ngnmarket/kwayisi fetching)
+httpx==0.28.1
+httpcore==1.0.9
+
+# Pydantic
+pydantic==2.12.5
+pydantic-settings==2.12.0
+pydantic_core==2.41.5
+
+# Config & utils
+python-dotenv==1.2.1
+python-dateutil==2.9.0.post0
+PyYAML==6.0.3
+certifi==2026.1.4
+limits==5.8.0
+
+# PDF parsing (for knowledge base)
+pdfminer.six==20251230
+pdfplumber==0.11.9
+
+# Misc
+typing_extensions==4.15.0
+anyio==4.12.1
+click==8.3.1
+idna==3.11
+h11==0.16.0
+six==1.17.0

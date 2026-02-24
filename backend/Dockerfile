@@ -1,65 +1,52 @@
-# Stage 1: Build environment with Poetry
-FROM python:3.11-slim as builder
+# ── NSE Trader Backend ─────────────────────────────────────────────
+# Multi-stage build: install deps in builder, copy to slim runtime.
+# Data (SQLite DBs) lives in /app/data — mount as a Docker volume
+# so it persists across container restarts.
+# ───────────────────────────────────────────────────────────────────
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
-# Pin Poetry version for consistency
-ENV POETRY_VERSION=1.7.1
-ENV POETRY_HOME="/opt/poetry"
-ENV POETRY_VENV_PATH="/opt/poetry-venvs"
-ENV PATH="$POETRY_HOME/bin:$PATH"
+# Stage 1: Install dependencies
+FROM python:3.11-slim AS builder
 
-# Install Poetry
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
-    && curl -sSL https://install.python-poetry.org | python3 - \
-    && apt-get remove -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
-# Set working directory
 WORKDIR /app
 
-# Create a non-root user
-RUN groupadd -r appuser && useradd --no-log-init -r -g appuser appuser
-
-# Configure Poetry to create virtual envs in the project directory
-RUN poetry config virtualenvs.in-project true
-
-# Copy dependency definition files
-COPY pyproject.toml poetry.lock* ./
-
-# Install dependencies - excluding dev dependencies
-# Use --no-root to avoid installing the project itself, we copy it later
-RUN poetry install --no-dev --no-interaction --no-ansi --no-root
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # Stage 2: Production image
 FROM python:3.11-slim
 
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Create the same non-root user as in the builder stage
+# Create non-root user
 RUN groupadd -r appuser && useradd --no-log-init -r -g appuser appuser
 
-# Copy the virtual environment with dependencies from the builder stage
-COPY --from=builder /app/.venv .venv
-
-# Activate the virtual environment
-ENV PATH="/app/.venv/bin:$PATH"
+# Copy installed packages from builder
+COPY --from=builder /install /usr/local
 
 # Copy application code
 COPY ./app ./app
 
-# Ensure the non-root user owns the application files
-RUN chown -R appuser:appuser /app
+# Copy top-level scripts needed by background tasks
+COPY fetch_real_ohlcv.py .
+COPY run_backtest.py .
 
-# Switch to the non-root user
+# Create data directory (will be overridden by volume mount)
+RUN mkdir -p /app/data && chown -R appuser:appuser /app
+
+# Switch to non-root user
 USER appuser
 
-# Expose the port the app runs on
 EXPOSE 8000
 
-# Run the application using Uvicorn
-# Use --host 0.0.0.0 to be accessible from outside the container
+# Healthcheck — hit the API health endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health/sources')" || exit 1
+
+# Run with uvicorn
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
