@@ -296,6 +296,9 @@ class RecommendationService:
         if df is None or len(df) < 20:
             return None
 
+        # Extract trade_date (last date in the price DataFrame)
+        trade_date = str(df.index[-1].date()) if hasattr(df.index[-1], 'date') else str(df.index[-1])
+
         # Get market data for regime detection
         market_df = self._get_market_dataframe()
 
@@ -319,6 +322,23 @@ class RecommendationService:
         result['confidence_score'] = 0.8
         result['suppression_reason'] = None
         result['status'] = 'ACTIVE'
+        result['trade_date'] = trade_date
+        result['price_source'] = 'historical_ohlcv'
+
+        # Staleness warning: flag if price data is >2 trading days old
+        from datetime import date as date_type, timedelta
+        try:
+            last_date = date_type.fromisoformat(trade_date)
+            days_old = (date_type.today() - last_date).days
+            if days_old > 3:  # >3 calendar days ≈ >2 trading days
+                result.setdefault('risk_warnings', []).append(
+                    f"Price data is {days_old} days old (as of {trade_date})"
+                )
+                result['price_stale'] = True
+            else:
+                result['price_stale'] = False
+        except (ValueError, TypeError):
+            result['price_stale'] = None
 
         # Calculate probabilistic bias signal
         signals_for_bias = [
