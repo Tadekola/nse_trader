@@ -234,3 +234,67 @@ async def run_walk_forward_backtest(
 
     results = run_backtest(config)
     return results.to_dict()
+
+
+# === Paper Trading Endpoints ===
+
+@router.get("/paper-trading")
+async def get_paper_trading_status():
+    """
+    Get paper trading dashboard: tracked signals, evaluation status, and performance.
+    """
+    from app.services.signal_history import get_signal_history_store
+
+    store = get_signal_history_store()
+    all_signals = store.get_all_signals()
+    counts = store.count_signals()
+
+    evaluated = [s for s in all_signals if s.status.value == "evaluated"]
+
+    # Compute hit rates from evaluated signals
+    hit_1d = [s.hit_1d for s in evaluated if s.hit_1d is not None]
+    hit_5d = [s.hit_5d for s in evaluated if s.hit_5d is not None]
+    hit_20d = [s.hit_20d for s in evaluated if s.hit_20d is not None]
+
+    ret_1d = [s.return_1d for s in evaluated if s.return_1d is not None]
+    ret_5d = [s.return_5d for s in evaluated if s.return_5d is not None]
+    ret_20d = [s.return_20d for s in evaluated if s.return_20d is not None]
+
+    return {
+        "signal_counts": counts,
+        "hit_rates": {
+            "1d": round(sum(hit_1d) / len(hit_1d), 4) if hit_1d else None,
+            "5d": round(sum(hit_5d) / len(hit_5d), 4) if hit_5d else None,
+            "20d": round(sum(hit_20d) / len(hit_20d), 4) if hit_20d else None,
+        },
+        "avg_returns": {
+            "1d": round(sum(ret_1d) / len(ret_1d), 4) if ret_1d else None,
+            "5d": round(sum(ret_5d) / len(ret_5d), 4) if ret_5d else None,
+            "20d": round(sum(ret_20d) / len(ret_20d), 4) if ret_20d else None,
+        },
+        "sample_sizes": {
+            "1d": len(hit_1d),
+            "5d": len(hit_5d),
+            "20d": len(hit_20d),
+        },
+        "recent_signals": [
+            s.to_dict() for s in sorted(
+                all_signals, key=lambda x: x.generated_at, reverse=True
+            )[:10]
+        ],
+    }
+
+
+@router.post("/paper-trading/evaluate")
+async def trigger_signal_evaluation():
+    """
+    Manually trigger evaluation of matured pending signals.
+
+    Normally runs hourly as a background task, but can be triggered on demand.
+    """
+    from app.services.signal_evaluator_job import evaluate_pending_signals
+    import asyncio
+
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, evaluate_pending_signals)
+    return result

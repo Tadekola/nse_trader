@@ -369,6 +369,26 @@ class RecommendationService:
         result['bias_signal'] = bias_signal.to_dict()
         result['probabilistic_reasoning'] = bias_signal.reasoning
 
+        # Track signal for paper trading performance evaluation
+        try:
+            from app.services.signal_history import get_signal_history_store
+            store = get_signal_history_store()
+            regime_name = session_regime.regime.value if session_regime else "unknown"
+            regime_conf = session_regime.confidence if session_regime else 0.5
+            store.store_signal(
+                symbol=symbol,
+                bias_direction=bias_signal.bias_direction.value,
+                bias_probability=bias_signal.bias_probability or 50,
+                regime=regime_name,
+                regime_confidence=regime_conf,
+                data_confidence_score=0.8,
+                price_at_signal=recommendation.current_price,
+                horizon=horizon.value,
+                indicator_agreement=bias_signal.indicator_agreement,
+            )
+        except Exception as e:
+            logger.debug("Signal tracking skipped for %s: %s", symbol, e)
+
         return _sanitize_numpy(result)
 
     async def get_top_recommendations(
