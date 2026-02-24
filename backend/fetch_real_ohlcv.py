@@ -34,7 +34,7 @@ except ImportError:
 SYMBOLS = [
     "DANGCEM", "GTCO", "ZENITHBANK", "MTNN", "AIRTELAFRI",
     "BUACEMENT", "SEPLAT", "NESTLE", "ACCESSCORP", "UBA",
-    "FIRSTHOLDCO", "STANBICIBTC", "GEREGU", "BUAFOODS", "NB",
+    "FIRSTHOLDCO", "STANBIC", "GEREGU", "BUAFOODS", "NB",
     "OKOMUOIL", "PRESCO", "FCMB", "TRANSCORP",
     "JBERGER", "CUSTODIAN", "UCAP", "CADBURY", "UNILEVER",
     "MANSARD", "VITAFOAM", "NAHCO", "OANDO", "FIDELITYBK",
@@ -44,14 +44,14 @@ SYMBOLS = [
 # Canonical symbol → ngnmarket.com URL slug (try multiple variants)
 NGNMARKET_VARIANTS: Dict[str, List[str]] = {
     "FIRSTHOLDCO": ["FIRSTHOLDCO", "FBNHOLDINGS", "FBNH"],
-    "STANBICIBTC": ["STANBICIBTC", "STANBIC"],
+    "STANBIC": ["STANBIC", "STANBICIBTC"],
     "FIDELITYBK":  ["FIDELITYBK", "FIDELITYBNK"],
 }
 
 # Canonical symbol → kwayisi slug
 KWAYISI_MAP: Dict[str, str] = {
     "FIRSTHOLDCO": "FIRSTHOLDCO",
-    "STANBICIBTC": "STANBIC",
+    "STANBIC": "STANBIC",
     "FIDELITYBK": "FIDELITYBK",
 }
 
@@ -60,7 +60,7 @@ AVG_VOLUMES: Dict[str, int] = {
     "DANGCEM": 2_000_000, "GTCO": 15_000_000, "ZENITHBANK": 20_000_000,
     "MTNN": 3_000_000, "AIRTELAFRI": 500_000, "BUACEMENT": 1_500_000,
     "SEPLAT": 400_000, "NESTLE": 200_000, "ACCESSCORP": 25_000_000,
-    "UBA": 15_000_000, "FIRSTHOLDCO": 20_000_000, "STANBICIBTC": 1_500_000,
+    "UBA": 15_000_000, "FIRSTHOLDCO": 20_000_000, "STANBIC": 1_500_000,
     "GEREGU": 500_000, "BUAFOODS": 1_000_000, "NB": 800_000,
     "OKOMUOIL": 300_000, "PRESCO": 250_000, "FCMB": 10_000_000,
     "TRANSCORP": 5_000_000, "JBERGER": 850_000,
@@ -409,6 +409,80 @@ def add_anchored_backfill(
     return backfill_rows
 
 
+def _deduplicate(rows: List[dict]) -> List[dict]:
+    """Deduplicate by (symbol, ts) — keep real data over backfill."""
+    SOURCE_PRIORITY = {
+        "ngnmarket_live": 0,
+        "kwayisi_historical": 1,
+        "ngnmarket_historical": 2,
+        "anchored_backfill": 3,
+    }
+    best: Dict[Tuple[str, date], dict] = {}
+    for r in rows:
+        key = (r["symbol"], r["ts"])
+        if key not in best:
+            best[key] = r
+        else:
+            existing_prio = SOURCE_PRIORITY.get(best[key]["source"], 9)
+            new_prio = SOURCE_PRIORITY.get(r["source"], 9)
+            if new_prio < existing_prio:
+                best[key] = r
+    return list(best.values())
+
+
+def persist_to_historical_db(rows: List[dict]):
+    """
+    Write OHLCV rows into the HISTORICAL storage (historical_ohlcv.db).
+
+    This is the database that the recommendation engine reads from
+    via _build_price_dataframe → get_historical_storage().
+    """
+    from app.data.historical.storage import (
+        get_historical_storage, OHLCVRecord,
+    )
+
+    storage = get_historical_storage()
+
+    # Clear existing data by dropping and re-creating
+    # (HistoricalOHLCVStorage uses INSERT OR IGNORE, so we need to clear first)
+    import sqlite3
+    conn = sqlite3.connect(str(storage.db_path))
+    try:
+        conn.execute("DELETE FROM ohlcv")
+        conn.execute("DELETE FROM symbol_metadata")
+        conn.commit()
+        logger.info("Cleared historical_ohlcv.db")
+    finally:
+        conn.close()
+
+    # Re-initialize to pick up clean state
+    storage._initialized = False
+    storage._init_db()
+
+    records = [
+        OHLCVRecord(
+            symbol=r["symbol"],
+            date=r["ts"],
+            open=r["open"],
+            high=r["high"],
+            low=r["low"],
+            close=r["close"],
+            volume=r["volume"],
+            source=r["source"],
+        )
+        for r in rows
+    ]
+
+    stored, errors = storage.store_ohlcv_batch(records, validate=True)
+    logger.info(
+        f"Historical DB: {stored} stored, {len(errors)} validation errors"
+    )
+
+    # Verify
+    stats = storage.get_stats()
+    print(f"  historical_ohlcv.db: {stats}")
+
+
 async def persist_to_db(rows: List[dict]):
     """Write OHLCV rows into the main SQLAlchemy OHLCVPrice table."""
     if not rows:
@@ -421,31 +495,13 @@ async def persist_to_db(rows: List[dict]):
     await init_db()
     session_factory = get_session_factory()
 
+    unique_rows = _deduplicate(rows)
+
     async with session_factory() as session:
         # Clear ALL old OHLCV data (synthetic + stale)
         from sqlalchemy import delete
         result = await session.execute(delete(OHLCVPrice))
         logger.info(f"Cleared {result.rowcount} old OHLCV rows")
-
-        # Deduplicate by (symbol, ts) — keep real data over backfill
-        SOURCE_PRIORITY = {
-            "ngnmarket_live": 0,
-            "kwayisi_historical": 1,
-            "ngnmarket_historical": 2,
-            "anchored_backfill": 3,
-        }
-        best: Dict[Tuple[str, date], dict] = {}
-        for r in rows:
-            key = (r["symbol"], r["ts"])
-            if key not in best:
-                best[key] = r
-            else:
-                existing_prio = SOURCE_PRIORITY.get(best[key]["source"], 9)
-                new_prio = SOURCE_PRIORITY.get(r["source"], 9)
-                if new_prio < existing_prio:
-                    best[key] = r
-
-        unique_rows = list(best.values())
 
         # Insert
         for r in unique_rows:
@@ -461,9 +517,13 @@ async def persist_to_db(rows: List[dict]):
             ))
 
         await session.commit()
-        logger.info(f"Persisted {len(unique_rows)} OHLCV rows to DB")
+        logger.info(f"Persisted {len(unique_rows)} OHLCV rows to main DB")
+
+    # Also persist to the historical storage used by the recommendation engine
+    persist_to_historical_db(unique_rows)
 
     # ── Print summary ────────────────────────────────────────────────
+    unique_rows = _deduplicate(rows)
     symbols_data: Dict[str, Dict[str, Any]] = {}
     for r in unique_rows:
         sym = r["symbol"]
@@ -494,6 +554,64 @@ async def persist_to_db(rows: List[dict]):
     print("=" * 72)
 
 
+def generate_asi_data(stock_rows: List[dict]) -> List[dict]:
+    """
+    Generate synthetic ASI (All Share Index) data from stock-level data.
+
+    The ASI is a market-cap-weighted index. We approximate it by averaging
+    the normalised price series of our stocks and scaling to a realistic
+    ASI level (~100 000).
+    """
+    from collections import defaultdict
+
+    # Group rows by date
+    by_date: Dict[date, List[dict]] = defaultdict(list)
+    for r in stock_rows:
+        by_date[r["ts"]].append(r)
+
+    if not by_date:
+        return []
+
+    ASI_BASE = 100_000.0
+    sorted_dates = sorted(by_date.keys())
+
+    # Build a simple equal-weight index from close prices
+    # Normalise each symbol's close to its first-seen close
+    first_close: Dict[str, float] = {}
+    asi_rows: List[dict] = []
+
+    for d in sorted_dates:
+        day_rows = by_date[d]
+        normalised = []
+        for r in day_rows:
+            sym = r["symbol"]
+            if sym not in first_close:
+                first_close[sym] = r["close"]
+            if first_close[sym] > 0:
+                normalised.append(r["close"] / first_close[sym])
+
+        if not normalised:
+            continue
+
+        avg_norm = sum(normalised) / len(normalised)
+        asi_close = round(ASI_BASE * avg_norm, 2)
+        # Simulate OHLV around close
+        spread = asi_close * 0.003  # 0.3 % daily spread
+        asi_rows.append({
+            "symbol": "ASI",
+            "ts": d,
+            "open": round(asi_close + random.uniform(-spread, spread), 2),
+            "high": round(asi_close + abs(random.gauss(0, spread)), 2),
+            "low": round(asi_close - abs(random.gauss(0, spread)), 2),
+            "close": asi_close,
+            "volume": random.randint(800_000_000, 1_500_000_000),
+            "source": "synthetic_asi",
+        })
+
+    logger.info(f"ASI: generated {len(asi_rows)} index rows")
+    return asi_rows
+
+
 async def main():
     print("=" * 72)
     print("FETCHING REAL OHLCV DATA")
@@ -507,6 +625,11 @@ async def main():
     backfill = add_anchored_backfill(all_rows, real_prices)
     all_rows.extend(backfill)
     print(f"Phase 3:   +{len(backfill)} anchored backfill rows")
+
+    # Generate ASI index data for regime detection
+    asi_rows = generate_asi_data(all_rows)
+    all_rows.extend(asi_rows)
+    print(f"Phase 4:   +{len(asi_rows)} ASI index rows")
 
     # Persist
     if all_rows:

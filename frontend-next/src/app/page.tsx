@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   getBuyRecommendations,
+  getTopRecommendations,
   getMarketSummary,
 } from "@/api/client";
 import type {
@@ -92,8 +93,15 @@ export default function TopPicksPage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await getBuyRecommendations(horizon, 15);
-        setPicks(res.data);
+        // Try BUY-only first
+        const buyRes = await getBuyRecommendations(horizon, 15);
+        if (buyRes.data.length > 0) {
+          setPicks(buyRes.data);
+        } else {
+          // Fall back to all active recommendations
+          const allRes = await getTopRecommendations({ horizon, limit: 15 });
+          setPicks(allRes.data);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load recommendations");
         setPicks([]);

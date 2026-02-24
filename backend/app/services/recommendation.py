@@ -8,10 +8,28 @@ Provides recommendation generation and management with:
 - Signal lifecycle governance (TTL enforcement, NO_TRADE state)
 """
 import logging
+import numpy as np
 from typing import Optional, Dict, List, Any
 from datetime import datetime, timedelta
 from dataclasses import asdict
 import pandas as pd
+
+
+def _sanitize_numpy(obj: Any) -> Any:
+    """Recursively convert numpy types to native Python types for JSON serialization."""
+    if isinstance(obj, dict):
+        return {k: _sanitize_numpy(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_numpy(v) for v in obj]
+    if isinstance(obj, (np.bool_,)):
+        return bool(obj)
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    return obj
 
 from app.core.recommendation_engine import (
     RecommendationEngine, Recommendation, TimeHorizon, RecommendationAction
@@ -257,6 +275,82 @@ class RecommendationService:
         
         return result
     
+    async def _generate_recommendation_from_data(
+        self,
+        stock_data: Dict[str, Any],
+        horizon: TimeHorizon = TimeHorizon.SWING
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Generate a recommendation from already-fetched stock data.
+        
+        Batch-friendly: skips validation service (data already fetched),
+        uses a default confidence score, and builds price data from
+        historical storage.
+        """
+        symbol = stock_data.get('symbol', '').upper()
+        if not symbol:
+            return None
+
+        # Build price DataFrame from historical storage
+        df = self._build_price_dataframe(stock_data)
+        if df is None or len(df) < 20:
+            return None
+
+        # Get market data for regime detection
+        market_df = self._get_market_dataframe()
+
+        # Generate recommendation via engine
+        recommendation = self.engine.generate_recommendation(
+            symbol=symbol,
+            name=stock_data.get('name', symbol),
+            price_data=df,
+            horizon=horizon,
+            market_data=market_df,
+            fundamental_data=self._extract_fundamentals(stock_data)
+        )
+
+        if recommendation is None:
+            return None
+
+        # Convert to dict
+        result = self._recommendation_to_dict(recommendation)
+
+        # Default confidence score (no multi-source validation in batch)
+        result['confidence_score'] = 0.8
+        result['suppression_reason'] = None
+        result['status'] = 'ACTIVE'
+
+        # Calculate probabilistic bias signal
+        signals_for_bias = [
+            {"direction": s.direction, "strength": s.strength}
+            for s in recommendation.signals
+        ]
+        bias_signal = self.bias_calculator.calculate_bias(
+            internal_action=recommendation.action.value,
+            signals=signals_for_bias,
+            recommendation_confidence=recommendation.confidence,
+            data_confidence_score=0.8,
+            is_suppressed=False
+        )
+
+        # Get session regime and apply adjustments
+        session_regime = self._get_session_regime()
+        if session_regime:
+            bias_signal = self.bias_calculator.apply_regime_adjustment(
+                bias_signal=bias_signal,
+                regime_analysis=session_regime
+            )
+            result['market_regime'] = session_regime.to_dict()
+
+        # Add probabilistic bias fields
+        result['bias_direction'] = bias_signal.bias_direction.value
+        result['bias_probability'] = bias_signal.bias_probability
+        result['bias_label'] = convert_action_to_bias_label(recommendation.action.value)
+        result['bias_signal'] = bias_signal.to_dict()
+        result['probabilistic_reasoning'] = bias_signal.reasoning
+
+        return _sanitize_numpy(result)
+
     async def get_top_recommendations(
         self,
         horizon: TimeHorizon = TimeHorizon.SWING,
@@ -831,8 +925,8 @@ class RecommendationService:
         return explanation
     
     def _recommendation_to_dict(self, rec: Recommendation) -> Dict[str, Any]:
-        """Convert Recommendation to dict."""
-        return {
+        """Convert Recommendation to dict (numpy-safe)."""
+        return _sanitize_numpy({
             'symbol': rec.symbol,
             'name': rec.name,
             'action': rec.action.value,
@@ -866,7 +960,7 @@ class RecommendationService:
             ],
             'timestamp': rec.timestamp.isoformat(),
             'valid_until': rec.valid_until.isoformat() if rec.valid_until else None
-        }
+        })
     
     def _get_from_cache(self, key: str) -> Optional[Any]:
         """Get from cache if not expired."""

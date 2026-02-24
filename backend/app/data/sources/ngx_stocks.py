@@ -90,9 +90,9 @@ class NGXStockRegistry:
             shares_outstanding=34_199_433_397,
             liquidity_tier='high'
         ),
-        'FBNH': StockInfo(
-            symbol='FBNH',
-            name='FBN Holdings Plc',
+        'FIRSTHOLDCO': StockInfo(
+            symbol='FIRSTHOLDCO',
+            name='First HoldCo Plc (formerly FBN Holdings)',
             sector=Sector.FINANCIAL_SERVICES,
             market_cap_billions=592.27,
             shares_outstanding=35_895_292_790,
@@ -232,14 +232,7 @@ class NGXStockRegistry:
             shares_outstanding=8_000_000_000,
             liquidity_tier='medium'
         ),
-        'FLOURMILL': StockInfo(
-            symbol='FLOURMILL',
-            name='Flour Mills of Nigeria Plc',
-            sector=Sector.CONSUMER_GOODS,
-            market_cap_billions=206.25,
-            shares_outstanding=4_100_000_000,
-            liquidity_tier='medium'
-        ),
+        # FLOURMILL: Delisted from NGX in December 2024
         'DANGSUGAR': StockInfo(
             symbol='DANGSUGAR',
             name='Dangote Sugar Refinery Plc',
