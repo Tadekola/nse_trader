@@ -25,7 +25,7 @@ from app.services.recommendation import RecommendationService
 from app.core.recommendation_engine import TimeHorizon
 from app.core.explanation_generator import UserLevel
 
-router = APIRouter(prefix="/recommendations", tags=["Recommendations"])
+router = APIRouter(prefix="/recommendations", tags=["Recommendations"], redirect_slashes=False)
 
 # Initialize service
 recommendation_service = RecommendationService()
@@ -180,7 +180,7 @@ class MarketRegimeResponse(BaseModel):
     data: dict
 
 
-@router.get("/", response_model=RecommendationListResponse)
+@router.get("", response_model=RecommendationListResponse)
 async def get_top_recommendations(
     horizon: HorizonParam = Query(HorizonParam.swing, description="Investment time horizon"),
     action: Optional[str] = Query(None, description="Filter by action: BUY, SELL, HOLD"),

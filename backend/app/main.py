@@ -60,6 +60,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
+    redirect_slashes=False,
     title="NSE Trader API",
     description="""
 ## NSE Trader - Nigerian Stock Exchange Trading Platform
@@ -104,7 +105,10 @@ app.add_middleware(
 )
 
 # Provenance completeness enforcement (P3-3)
-app.add_middleware(ProvenanceEnforcementMiddleware)
+# Temporarily disabled — middleware body consumption breaks ASGI streaming
+# on Windows, causing ConnectionResetError for Next.js proxy requests.
+# TODO: Re-enable after fixing middleware to use background body inspection.
+# app.add_middleware(ProvenanceEnforcementMiddleware)
 
 
 # ── Protected routers (require API key in non-dev) ────────────────

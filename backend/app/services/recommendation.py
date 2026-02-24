@@ -383,21 +383,16 @@ class RecommendationService:
             logger.warning("No symbols with sufficient historical data")
             return []
 
-        # Fetch live prices ONLY for symbols with history
+        # Build stock dicts from registry (NO live fetch — the engine uses
+        # historical DB data, live prices only add latency here)
         eligible_symbols = list(symbols_with_history - {"ASI"})
-        result = await self.market_data._provider_chain.fetch_snapshot(eligible_symbols)
-
-        # Enrich with registry data
         stocks = []
         for symbol in eligible_symbols:
-            snapshot = result.snapshots.get(symbol)
             registry_info = self.market_data.registry.get_stock(symbol)
-            if snapshot and registry_info:
-                enriched = self.market_data._enrich_snapshot(snapshot, registry_info)
-                stocks.append(enriched)
-            elif registry_info:
-                # No live price but has registry info — use registry data
+            if registry_info:
                 stocks.append({**registry_info, 'symbol': symbol})
+            else:
+                stocks.append({'symbol': symbol, 'name': symbol, 'liquidity_tier': 'low'})
 
         # Filter by sector if needed
         if sector_filter:
