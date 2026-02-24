@@ -26,13 +26,19 @@ import type {
 
 const BASE = "/api/v1";
 
-async function fetchJSON<T>(url: string): Promise<T> {
-  const res = await fetch(url);
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`API ${res.status}: ${body}`);
+async function fetchJSON<T>(url: string, timeoutMs = 60_000): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`API ${res.status}: ${body}`);
+    }
+    return res.json() as Promise<T>;
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json() as Promise<T>;
 }
 
 // ── Health ──────────────────────────────────────────────────────────

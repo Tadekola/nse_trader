@@ -362,31 +362,44 @@ class RecommendationService:
         """
         Get top recommendations across all stocks.
         
-        Args:
-            horizon: Investment time horizon
-            action_filter: Filter by action (BUY, SELL, etc.)
-            sector_filter: Filter by sector
-            min_liquidity: Minimum liquidity tier
-            limit: Maximum number of recommendations
-        
-        Returns:
-            List of recommendation dicts
+        Optimisation: only fetch live prices for symbols that have
+        historical OHLCV data, skipping the slow network round-trip
+        for symbols that would be rejected by _build_price_dataframe.
         """
-        # Get appropriate stock list based on liquidity
-        if min_liquidity == "high":
-            stocks_result = await self.market_data.get_high_liquidity_stocks_async()
-        elif sector_filter:
-            stocks_result = await self.market_data.get_all_stocks_async()
-            # Filter later or implement specific async method
-        else:
-            stocks_result = await self.market_data.get_all_stocks_async()
-        
-        if not stocks_result.success:
+        from app.data.historical.storage import get_historical_storage
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        storage = get_historical_storage()
+
+        # Pre-filter: only symbols with enough historical data
+        all_metadata = storage.get_all_metadata()
+        symbols_with_history = {
+            m.symbol for m in all_metadata
+            if m.total_sessions >= settings.MIN_OHLCV_SESSIONS
+            and not m.is_stale(settings.OHLCV_STALENESS_DAYS)
+        }
+        if not symbols_with_history:
+            logger.warning("No symbols with sufficient historical data")
             return []
-        
-        stocks = stocks_result.data
-        
-        # Filter by sector if needed (if we fetched all)
+
+        # Fetch live prices ONLY for symbols with history
+        eligible_symbols = list(symbols_with_history - {"ASI"})
+        result = await self.market_data._provider_chain.fetch_snapshot(eligible_symbols)
+
+        # Enrich with registry data
+        stocks = []
+        for symbol in eligible_symbols:
+            snapshot = result.snapshots.get(symbol)
+            registry_info = self.market_data.registry.get_stock(symbol)
+            if snapshot and registry_info:
+                enriched = self.market_data._enrich_snapshot(snapshot, registry_info)
+                stocks.append(enriched)
+            elif registry_info:
+                # No live price but has registry info — use registry data
+                stocks.append({**registry_info, 'symbol': symbol})
+
+        # Filter by sector if needed
         if sector_filter:
              stocks = [s for s in stocks if s.get('sector') == sector_filter]
 
@@ -398,7 +411,6 @@ class RecommendationService:
             if liquidity_order.index(s.get('liquidity_tier', 'low')) <= min_index
         ]
         
-        # Build lookup dict for fast access (avoids re-fetching each stock)
         stocks_lookup = {s['symbol']: s for s in stocks}
         
         # Generate recommendations using already-fetched data
