@@ -9,7 +9,8 @@ services:
       POSTGRES_USER: nse_trader
       POSTGRES_PASSWORD: nse_trader
       POSTGRES_DB: nse_trader
-    # No host port — only backend needs access via Docker network
+    ports:
+      - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -32,7 +33,7 @@ services:
       # and new data persists across container restarts
       - ./backend/data:/app/data
     ports:
-      - "8000:8000"
+      - "8888:8000"
     environment:
       - DATABASE_URL=postgresql+asyncpg://nse_trader:nse_trader@postgres:5432/nse_trader
       - DATABASE_URL_SYNC=postgresql+psycopg2://nse_trader:nse_trader@postgres:5432/nse_trader
@@ -54,7 +55,7 @@ services:
     container_name: nse_trader_frontend
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3333:3000"
     environment:
       - BACKEND_URL=http://backend:8000
     depends_on:
