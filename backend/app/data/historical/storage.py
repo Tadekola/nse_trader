@@ -440,16 +440,20 @@ class HistoricalOHLCVStorage:
     def store_ohlcv_batch(
         self, 
         records: List[OHLCVRecord],
-        validate: bool = True
+        validate: bool = True,
+        upsert: bool = False
     ) -> Tuple[int, List[ValidationError]]:
         """
         Store multiple OHLCV records in a batch with validation.
         
-        De-duplication policy: IGNORE new duplicates (keep existing).
+        De-duplication policy:
+        - upsert=False (default): IGNORE new duplicates (keep existing)
+        - upsert=True: REPLACE existing records (for updating with fresh data)
         
         Args:
             records: List of OHLCV records
             validate: Whether to validate records (default True)
+            upsert: If True, use INSERT OR REPLACE to update existing records
             
         Returns:
             Tuple of (records_stored, validation_errors)
@@ -461,6 +465,16 @@ class HistoricalOHLCVStorage:
         validation_errors: List[ValidationError] = []
         symbols_updated = set()
         symbols_rejected: Dict[str, int] = {}
+        
+        insert_sql = """
+            INSERT OR REPLACE INTO ohlcv 
+            (symbol, date, open, high, low, close, volume, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """ if upsert else """
+            INSERT OR IGNORE INTO ohlcv 
+            (symbol, date, open, high, low, close, volume, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """
         
         try:
             with self._cursor() as cursor:
@@ -475,11 +489,7 @@ class HistoricalOHLCVStorage:
                             symbols_rejected[symbol] = symbols_rejected.get(symbol, 0) + 1
                             continue
                     
-                    cursor.execute("""
-                        INSERT OR IGNORE INTO ohlcv 
-                        (symbol, date, open, high, low, close, volume, source)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
+                    cursor.execute(insert_sql, (
                         symbol,
                         record.date.isoformat(),
                         record.open,

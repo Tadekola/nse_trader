@@ -50,20 +50,24 @@ async def lifespan(app: FastAPI):
         logger.error("Database initialization failed: %s", e)
         logger.warning("Continuing without persistent DB — audit trail will be unavailable")
 
-    # Start background signal evaluator for paper trading
+    # Start background tasks for paper trading
     import asyncio
     from app.services.signal_evaluator_job import signal_evaluator_loop
+    from app.services.daily_ohlcv_job import daily_ohlcv_loop
+
     evaluator_task = asyncio.create_task(signal_evaluator_loop())
-    logger.info("Signal evaluator background task started")
+    ohlcv_task = asyncio.create_task(daily_ohlcv_loop())
+    logger.info("Background tasks started: signal evaluator + daily OHLCV fetch")
 
     yield
 
     # Cancel background tasks
-    evaluator_task.cancel()
-    try:
-        await evaluator_task
-    except asyncio.CancelledError:
-        pass
+    for task in (evaluator_task, ohlcv_task):
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
     logger.info("Shutting down NSE Trader API...")
     try:

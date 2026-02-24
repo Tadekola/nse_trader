@@ -1005,6 +1005,8 @@ class RecommendationService:
                 }
                 for s in rec.signals[:5]
             ],
+            'composite_score': rec.score,
+            'raw_score': rec.raw_score,
             'timestamp': rec.timestamp.isoformat(),
             'valid_until': rec.valid_until.isoformat() if rec.valid_until else None
         })

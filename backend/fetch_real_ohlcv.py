@@ -374,8 +374,12 @@ async def fetch_all() -> Tuple[List[dict], Dict[str, float]]:
 def add_anchored_backfill(
     all_rows: List[dict], real_prices: Dict[str, float]
 ) -> List[dict]:
-    """Add backfill for symbols that lack sufficient history."""
-    # Count existing rows per symbol
+    """Add backfill for symbols that lack sufficient history.
+    
+    Checks BOTH fetched rows AND existing DB rows to avoid generating
+    unnecessary backfill when the DB already has enough history.
+    """
+    # Count existing rows per symbol (from fetched data)
     rows_per_symbol: Dict[str, int] = {}
     earliest_per_symbol: Dict[str, date] = {}
     for r in all_rows:
@@ -383,6 +387,23 @@ def add_anchored_backfill(
         rows_per_symbol[sym] = rows_per_symbol.get(sym, 0) + 1
         if sym not in earliest_per_symbol or r["ts"] < earliest_per_symbol[sym]:
             earliest_per_symbol[sym] = r["ts"]
+
+    # Also check the historical DB for existing rows
+    try:
+        from app.data.historical.storage import get_historical_storage
+        storage = get_historical_storage()
+        import sqlite3
+        conn = sqlite3.connect(str(storage.db_path))
+        cur = conn.execute("SELECT symbol, COUNT(*) as cnt FROM ohlcv GROUP BY symbol")
+        for row in cur.fetchall():
+            sym, db_sessions = row[0], row[1]
+            if sym in rows_per_symbol:
+                rows_per_symbol[sym] = max(rows_per_symbol[sym], db_sessions)
+            else:
+                rows_per_symbol[sym] = db_sessions
+        conn.close()
+    except Exception as e:
+        logger.debug(f"Could not check DB for existing rows: {e}")
 
     backfill_rows: List[dict] = []
     for sym in SYMBOLS:
@@ -436,6 +457,10 @@ def persist_to_historical_db(rows: List[dict]):
 
     This is the database that the recommendation engine reads from
     via _build_price_dataframe → get_historical_storage().
+
+    Accumulative: real data (ngnmarket, kwayisi) uses UPSERT to update
+    existing rows; backfill uses INSERT OR IGNORE to never overwrite real data.
+    History grows over time instead of being wiped on every run.
     """
     from app.data.historical.storage import (
         get_historical_storage, OHLCVRecord,
@@ -443,40 +468,39 @@ def persist_to_historical_db(rows: List[dict]):
 
     storage = get_historical_storage()
 
-    # Clear existing data by dropping and re-creating
-    # (HistoricalOHLCVStorage uses INSERT OR IGNORE, so we need to clear first)
-    import sqlite3
-    conn = sqlite3.connect(str(storage.db_path))
-    try:
-        conn.execute("DELETE FROM ohlcv")
-        conn.execute("DELETE FROM symbol_metadata")
-        conn.commit()
-        logger.info("Cleared historical_ohlcv.db")
-    finally:
-        conn.close()
+    # Separate real data from backfill — different insert strategies
+    REAL_SOURCES = {"ngnmarket_live", "kwayisi_historical", "ngnmarket_historical", "synthetic_asi"}
+    real_rows = [r for r in rows if r["source"] in REAL_SOURCES]
+    backfill_rows = [r for r in rows if r["source"] not in REAL_SOURCES]
 
-    # Re-initialize to pick up clean state
-    storage._initialized = False
-    storage._init_db()
+    def _to_records(row_list):
+        return [
+            OHLCVRecord(
+                symbol=r["symbol"],
+                date=r["ts"],
+                open=r["open"],
+                high=r["high"],
+                low=r["low"],
+                close=r["close"],
+                volume=r["volume"],
+                source=r["source"],
+            )
+            for r in row_list
+        ]
 
-    records = [
-        OHLCVRecord(
-            symbol=r["symbol"],
-            date=r["ts"],
-            open=r["open"],
-            high=r["high"],
-            low=r["low"],
-            close=r["close"],
-            volume=r["volume"],
-            source=r["source"],
+    # Real data: UPSERT (update today's prices, add new dates)
+    if real_rows:
+        stored_real, errors_real = storage.store_ohlcv_batch(
+            _to_records(real_rows), validate=True, upsert=True
         )
-        for r in rows
-    ]
+        logger.info(f"Historical DB: {stored_real} real rows stored/updated, {len(errors_real)} errors")
 
-    stored, errors = storage.store_ohlcv_batch(records, validate=True)
-    logger.info(
-        f"Historical DB: {stored} stored, {len(errors)} validation errors"
-    )
+    # Backfill: INSERT OR IGNORE (never overwrite real data)
+    if backfill_rows:
+        stored_bf, errors_bf = storage.store_ohlcv_batch(
+            _to_records(backfill_rows), validate=True, upsert=False
+        )
+        logger.info(f"Historical DB: {stored_bf} backfill rows added (ignored existing), {len(errors_bf)} errors")
 
     # Verify
     stats = storage.get_stats()
@@ -484,40 +508,70 @@ def persist_to_historical_db(rows: List[dict]):
 
 
 async def persist_to_db(rows: List[dict]):
-    """Write OHLCV rows into the main SQLAlchemy OHLCVPrice table."""
+    """
+    Write OHLCV rows into the main SQLAlchemy OHLCVPrice table.
+
+    Accumulative: uses upsert (update on conflict) so history grows
+    over time instead of being wiped on every run.
+    """
     if not rows:
         logger.warning("No rows to persist.")
         return
 
     from app.db.engine import init_db, get_session_factory
     from app.db.models import OHLCVPrice
+    from sqlalchemy import select
 
     await init_db()
     session_factory = get_session_factory()
 
     unique_rows = _deduplicate(rows)
+    inserted = 0
+    updated = 0
 
     async with session_factory() as session:
-        # Clear ALL old OHLCV data (synthetic + stale)
-        from sqlalchemy import delete
-        result = await session.execute(delete(OHLCVPrice))
-        logger.info(f"Cleared {result.rowcount} old OHLCV rows")
-
-        # Insert
         for r in unique_rows:
-            session.add(OHLCVPrice(
-                symbol=r["symbol"],
-                ts=r["ts"],
-                open=r["open"],
-                high=r["high"],
-                low=r["low"],
-                close=r["close"],
-                volume=r["volume"],
-                source=r["source"],
-            ))
+            # Check if row exists
+            result = await session.execute(
+                select(OHLCVPrice).where(
+                    OHLCVPrice.symbol == r["symbol"],
+                    OHLCVPrice.ts == r["ts"],
+                )
+            )
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                # Update only if source is real data (not backfill overwriting real)
+                SOURCE_PRIORITY = {
+                    "ngnmarket_live": 0, "kwayisi_historical": 1,
+                    "ngnmarket_historical": 2, "synthetic_asi": 2,
+                    "anchored_backfill": 3,
+                }
+                new_prio = SOURCE_PRIORITY.get(r["source"], 9)
+                old_prio = SOURCE_PRIORITY.get(existing.source, 9)
+                if new_prio <= old_prio:
+                    existing.open = r["open"]
+                    existing.high = r["high"]
+                    existing.low = r["low"]
+                    existing.close = r["close"]
+                    existing.volume = r["volume"]
+                    existing.source = r["source"]
+                    updated += 1
+            else:
+                session.add(OHLCVPrice(
+                    symbol=r["symbol"],
+                    ts=r["ts"],
+                    open=r["open"],
+                    high=r["high"],
+                    low=r["low"],
+                    close=r["close"],
+                    volume=r["volume"],
+                    source=r["source"],
+                ))
+                inserted += 1
 
         await session.commit()
-        logger.info(f"Persisted {len(unique_rows)} OHLCV rows to main DB")
+        logger.info(f"Main DB: {inserted} inserted, {updated} updated ({len(unique_rows)} total)")
 
     # Also persist to the historical storage used by the recommendation engine
     persist_to_historical_db(unique_rows)

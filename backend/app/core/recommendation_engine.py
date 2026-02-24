@@ -97,6 +97,10 @@ class Recommendation:
     market_regime: MarketRegime
     regime_adjustment: str
     
+    # Scores (for diagnostics and threshold tuning)
+    score: float = 0.0           # adjusted composite score used for action determination
+    raw_score: float = 0.0       # pre-adjustment composite score
+    
     # Metadata
     timestamp: datetime = field(default_factory=datetime.utcnow)
     valid_until: Optional[datetime] = None
@@ -258,6 +262,8 @@ class RecommendationEngine:
             sector_context=sector_context,
             market_regime=regime_analysis.regime if regime_analysis else MarketRegime.RANGE_BOUND,
             regime_adjustment=regime_analysis.recommended_strategy if regime_analysis else "Normal trading",
+            score=adjusted_score,
+            raw_score=raw_score,
             valid_until=valid_until,
             historical_accuracy=historical_accuracy
         )
@@ -517,7 +523,12 @@ class RecommendationEngine:
     def _determine_action(
         self, score: float, liquidity: float, risk_level: RiskLevel
     ) -> RecommendationAction:
-        """Determine final recommendation action."""
+        """Determine final recommendation action.
+        
+        Thresholds calibrated to actual score distribution (~-0.15 to +0.16
+        for Nigerian equities with 150 sessions of history). Scores are
+        compressed by multi-layer normalization and risk/regime adjustments.
+        """
         
         # Very low liquidity = AVOID regardless of score
         if liquidity < 0.2:
@@ -525,25 +536,25 @@ class RecommendationEngine:
         
         # Very high risk reduces bullish recommendations
         if risk_level == RiskLevel.VERY_HIGH:
-            if score > 0.6:
+            if score > 0.20:
                 return RecommendationAction.BUY  # Cap at BUY, not STRONG_BUY
-            elif score > 0.2:
+            elif score > 0.05:
                 return RecommendationAction.HOLD
-            elif score > -0.2:
+            elif score > -0.05:
                 return RecommendationAction.HOLD
-            elif score > -0.5:
+            elif score > -0.15:
                 return RecommendationAction.SELL
             else:
                 return RecommendationAction.STRONG_SELL
         
         # Normal action mapping
-        if score >= 0.6:
+        if score >= 0.20:
             return RecommendationAction.STRONG_BUY
-        elif score >= 0.25:
+        elif score >= 0.10:
             return RecommendationAction.BUY
-        elif score >= -0.25:
+        elif score >= -0.10:
             return RecommendationAction.HOLD
-        elif score >= -0.6:
+        elif score >= -0.20:
             return RecommendationAction.SELL
         else:
             return RecommendationAction.STRONG_SELL
