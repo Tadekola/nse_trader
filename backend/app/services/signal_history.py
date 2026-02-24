@@ -380,8 +380,18 @@ _store_instance: Optional[SignalHistoryStore] = None
 
 
 def get_signal_history_store() -> SignalHistoryStore:
-    """Get singleton signal history store instance."""
+    """Get singleton signal history store instance.
+    
+    Uses SQLite-backed PersistentSignalStore so signals survive restarts.
+    Falls back to in-memory store if persistence layer fails.
+    """
     global _store_instance
     if _store_instance is None:
-        _store_instance = SignalHistoryStore()
+        try:
+            from app.services.signal_persistence import get_persistent_signal_store
+            _store_instance = get_persistent_signal_store()
+            logger.info("Using persistent (SQLite) signal store")
+        except Exception as e:
+            logger.warning("Persistent signal store unavailable, using in-memory: %s", e)
+            _store_instance = SignalHistoryStore()
     return _store_instance

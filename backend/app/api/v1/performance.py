@@ -199,3 +199,38 @@ async def get_hit_rate_summary(
     service = get_performance_service()
     response = service.get_hit_rates(days)
     return response.to_dict()
+
+
+# === Backtest Endpoint ===
+
+@router.get("/backtest")
+async def run_walk_forward_backtest(
+    horizon: str = Query(default="long_term", description="Investment horizon: short_term, swing, long_term"),
+    holding: int = Query(default=20, ge=1, le=60, description="Holding period in trading days"),
+    top_n: int = Query(default=5, ge=1, le=20, description="Number of top picks per rebalance"),
+    rebalance: int = Query(default=5, ge=1, le=20, description="Rebalance every N trading days"),
+):
+    """
+    Run a walk-forward backtest of the recommendation engine.
+
+    Compares engine picks against ASI (market) and equal-weight basket benchmarks.
+    Returns alpha, Sharpe ratio, hit rate, max drawdown, and equity curves.
+    """
+    from app.services.backtester import run_backtest, BacktestConfig
+    from app.core.recommendation_engine import TimeHorizon
+
+    try:
+        hz = TimeHorizon(horizon)
+    except ValueError:
+        raise HTTPException(400, f"Invalid horizon: {horizon}")
+
+    config = BacktestConfig(
+        warmup_sessions=60,
+        rebalance_every=rebalance,
+        holding_period=holding,
+        top_n=top_n,
+        horizon=hz,
+    )
+
+    results = run_backtest(config)
+    return results.to_dict()
