@@ -151,6 +151,17 @@ const StockScreener: React.FC<StockScreenerProps> = ({
     return vol.toString();
   };
 
+  const formatSource = (source: string) => {
+    switch (source) {
+      case 'ngx_official': return 'NGX';
+      case 'ngnmarket': return 'NGN Market';
+      case 'apt_securities': return 'Apt Sec';
+      case 'kwayisi': return 'Kwayisi';
+      case 'simulated': return 'Simulated';
+      default: return source;
+    }
+  };
+
   return (
     <div className="card overflow-hidden">
       {/* Filters */}
@@ -260,6 +271,9 @@ const StockScreener: React.FC<StockScreenerProps> = ({
                   Sector <SortIcon column="sector" />
                 </div>
               </th>
+              <th className="table-cell text-right">
+                Source
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -273,11 +287,12 @@ const StockScreener: React.FC<StockScreenerProps> = ({
                   <td className="table-cell text-right"><div className="h-4 w-14 bg-[var(--color-bg-tertiary)] rounded ml-auto"></div></td>
                   <td className="table-cell text-right"><div className="h-4 w-14 bg-[var(--color-bg-tertiary)] rounded ml-auto"></div></td>
                   <td className="table-cell"><div className="h-4 w-20 bg-[var(--color-bg-tertiary)] rounded"></div></td>
+                  <td className="table-cell text-right"><div className="h-4 w-12 bg-[var(--color-bg-tertiary)] rounded ml-auto"></div></td>
                 </tr>
               ))
             ) : filteredStocks.length === 0 ? (
               <tr>
-                <td colSpan={6} className="table-cell text-center py-8 text-[var(--color-text-tertiary)]">
+                <td colSpan={7} className="table-cell text-center py-8 text-[var(--color-text-tertiary)]">
                   No stocks match your filters
                 </td>
               </tr>
@@ -311,6 +326,17 @@ const StockScreener: React.FC<StockScreenerProps> = ({
                     </td>
                     <td className="table-cell text-[var(--color-text-tertiary)] text-xs">
                       {stock.sector || 'Other'}
+                    </td>
+                    <td className="table-cell text-right">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase font-medium ${
+                        stock.source === 'ngx_official' || stock.source === 'ngnmarket'
+                          ? 'bg-emerald-500/10 text-emerald-400'
+                          : stock.source === 'kwayisi'
+                            ? 'bg-blue-500/10 text-blue-400'
+                            : 'bg-amber-500/10 text-amber-400'
+                      }`}>
+                        {formatSource(stock.source || 'unknown')}
+                      </span>
                     </td>
                   </tr>
                 );

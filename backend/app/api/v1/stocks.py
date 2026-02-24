@@ -1,10 +1,12 @@
 """
 Stock API endpoints for NSE Trader.
 
-Uses 3-tier data sourcing:
-- Tier 1: NGX Official
-- Tier 2: Apt Securities
-- Tier 3: Simulated (last resort)
+Uses multi-tier data sourcing:
+- Tier 0: ngnmarket.com (primary - live data)
+- Tier 1: NGX Official (backup)
+- Tier 3: Simulated (last resort - clearly flagged)
+
+Note: Apt Securities (Tier 2) has been disabled due to persistent 404 errors.
 """
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, HTTPException, Query
@@ -19,6 +21,7 @@ class SourceBreakdownModel(BaseModel):
     """Source breakdown for transparency."""
     ngx_official: int = 0
     apt_securities: int = 0
+    kwayisi: int = 0
     simulated: int = 0
     total: int = 0
 
@@ -51,11 +54,15 @@ class StockResponse(BaseModel):
 
 
 class StockListResponse(BaseModel):
-    """List of stocks response with source metadata."""
+    """List of stocks response with source metadata and simulation disclosure."""
     success: bool
     count: int
     data: List[dict]
     source: str
+    # Top-level simulation disclosure (for easy frontend consumption)
+    contains_simulated: bool = False
+    simulated_symbols: List[str] = []
+    # Detailed metadata
     meta: Optional[Dict[str, Any]] = None
 
 
@@ -83,20 +90,27 @@ async def get_all_stocks(
     service = get_market_data_service()
     
     if sector:
-        result = service.get_stocks_by_sector(sector)
+        result = await service.get_stocks_by_sector_async(sector)
     elif liquidity == "high":
-        result = service.get_high_liquidity_stocks()
+        result = await service.get_high_liquidity_stocks_async()
     else:
-        result = service.get_all_stocks()
+        result = await service.get_all_stocks_async()
     
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
+    
+    # Extract simulation info from meta for top-level disclosure
+    meta = result.meta or {}
+    contains_simulated = meta.get('is_simulated', False)
+    simulated_symbols = meta.get('simulated_symbols', [])
     
     return StockListResponse(
         success=True,
         count=len(result.data),
         data=result.data,
         source=result.source,
+        contains_simulated=contains_simulated,
+        simulated_symbols=simulated_symbols,
         meta=result.meta
     )
 
@@ -149,7 +163,7 @@ async def get_market_summary():
     Get overall market summary including ASI and breadth.
     """
     service = get_market_data_service()
-    result = service.get_market_summary()
+    result = await service.get_market_summary_async()
     
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
@@ -168,7 +182,7 @@ async def get_stock(symbol: str):
     Get detailed data for a specific stock.
     """
     service = get_market_data_service()
-    result = service.get_stock(symbol)
+    result = await service.get_stock_async(symbol)
     
     if not result.success:
         raise HTTPException(status_code=404, detail=result.error)
@@ -188,7 +202,7 @@ async def get_stock_indicators(symbol: str):
     Get technical indicators for a specific stock.
     """
     service = get_market_data_service()
-    result = service.get_technical_indicators(symbol)
+    result = await service.get_technical_indicators_async(symbol)
     
     if not result.success:
         raise HTTPException(status_code=404, detail=result.error)

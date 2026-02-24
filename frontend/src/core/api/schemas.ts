@@ -43,6 +43,7 @@ export type Stock = z.infer<typeof StockSchema>;
 export const SourceBreakdownSchema = z.object({
   ngx_official: z.number(),
   apt_securities: z.number(),
+  kwayisi: z.number(),
   simulated: z.number(),
   total: z.number(),
 });
@@ -103,19 +104,19 @@ export const MarketRegimeSchema = z.object({
   regime: z.string(),
   trend: z.string(),
   confidence: z.number(),
-  duration_days: z.number(),
-  recommended_strategy: z.string(),
-  position_size_modifier: z.number(),
-  risk_adjustment: z.string(),
-  sectors_to_favor: z.array(z.string()),
-  sectors_to_avoid: z.array(z.string()),
-  warnings: z.array(z.string()),
+  duration_days: z.number().optional().default(0),
+  recommended_strategy: z.string().optional().default(''),
+  position_size_modifier: z.number().optional().default(1.0),
+  risk_adjustment: z.union([z.string(), z.number()]).optional().default(''),
+  sectors_to_favor: z.array(z.string()).optional().default([]),
+  sectors_to_avoid: z.array(z.string()).optional().default([]),
+  warnings: z.array(z.string()).optional().default([]),
   metrics: z.object({
     asi_vs_sma_50: z.number(),
     asi_vs_sma_200: z.number(),
     volatility_percentile: z.number(),
     breadth_ratio: z.number(),
-  }),
+  }).optional().default({ asi_vs_sma_50: 0, asi_vs_sma_200: 0, volatility_percentile: 0, breadth_ratio: 0 }),
 });
 
 export type MarketRegime = z.infer<typeof MarketRegimeSchema>;
@@ -159,6 +160,15 @@ export const RecommendationSchema = z.object({
   timestamp: z.string(),
   valid_until: z.string().nullable().optional(),
   user_explanation: z.string().nullable().optional(),
+  confidence_score: z.number().optional(),
+  data_confidence: z.object({
+    confidence_score: z.number(),
+    status: z.string(),
+    suppression_reason: z.string().optional(),
+    primary_source: z.string().optional(),
+    secondary_source: z.string().optional(),
+    divergence_pct: z.number().optional(),
+  }).optional(),
 }).transform((data) => ({
   ...data,
   // Normalize null to undefined for compatibility
@@ -194,7 +204,7 @@ export function validateApiResponse<T>(
   const result = schema.safeParse(data);
   
   if (!result.success) {
-    const errors = result.error.errors.map(e => `${e.path.join('.')}: ${e.message}`);
+    const errors = result.error.issues.map((e) => `${e.path.join('.')}: ${e.message}`);
     
     if (import.meta.env.DEV) {
       console.error(`[API Validation] ${context} failed:`, errors);
@@ -221,6 +231,6 @@ export function safeValidate<T>(
   
   return {
     success: false,
-    errors: result.error.errors.map(e => `${e.path.join('.')}: ${e.message}`),
+    errors: result.error.issues.map((e) => `${e.path.join('.')}: ${e.message}`),
   };
 }

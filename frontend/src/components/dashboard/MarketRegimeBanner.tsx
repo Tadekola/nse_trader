@@ -146,7 +146,7 @@ const MarketRegimeBanner: React.FC<MarketRegimeBannerProps> = ({
               </h2>
               {regime && (
                 <span className="text-xs text-[var(--color-text-tertiary)] font-mono">
-                  {regime.confidence}% confidence
+                  {regime.confidence <= 1 ? (regime.confidence * 100).toFixed(0) : regime.confidence}% confidence
                 </span>
               )}
             </div>

@@ -1,16 +1,38 @@
 # NSE Trader Backend API v2.0
 
-A comprehensive Nigerian Stock Exchange trading analysis and recommendation platform.
+A Nigerian Stock Exchange analysis platform providing market data, technical indicators,
+and educational content for informed investment decisions.
+
+> **⚠️ Important Disclaimer**: This system provides analytical tools and educational content only.
+> It is NOT a trading bot, does NOT execute trades, and does NOT guarantee returns.
+> All recommendations are probabilistic assessments, not financial advice.
+
+## System Status & Data Integrity
+
+Check system health via: `GET /api/v1/health/trust`
+
+| Status | Meaning |
+|--------|---------|
+| `READY` | Performance metrics available from real data |
+| `PARTIALLY_READY` | Some symbols have sufficient history |
+| `NOT_READY` | Historical ingestion required |
+
+### Key Principles
+
+- **Forward-only metrics**: Performance is computed from real forward returns only, never backfilled
+- **NO_TRADE is protective**: When data is insufficient, the system refuses to recommend rather than guess
+- **Transparency first**: All limitations are disclosed in API responses
+- **No simulation in production**: All data comes from validated sources
 
 ## Features
 
 - **Real-time Stock Data**: Live prices from TradingView API
-- **Multi-layer Recommendation Engine**: Intelligent buy/sell signals with explainable confidence
-- **Market Regime Detection**: Bull, bear, range-bound, high-volatility market identification
-- **Risk Assessment**: Volatility, drawdown, VaR, and position sizing guidance
+- **Technical Indicators**: RSI, SMA, EMA, MACD, Bollinger Bands (gated by data availability)
+- **Market Regime Detection**: Bull, bear, range-bound, high-volatility identification
+- **Risk Assessment**: Volatility metrics, position sizing guidance
 - **Liquidity Scoring**: Critical for Nigerian market conditions
-- **Fundamental Analysis**: P/E, dividend yield, sector rotation
-- **Educational Content**: Knowledge base and learning paths for investor education
+- **Performance Tracking**: Forward-only hit rate computation (requires historical data)
+- **Educational Content**: Knowledge base and learning paths
 
 ## Architecture
 
@@ -146,6 +168,65 @@ The recommendation engine uses a multi-layer approach:
 - **Sector Concentration**: Banking ~40% of trading
 - **Settlement**: T+2
 
+## Understanding System Responses
+
+### NO_TRADE Signals
+
+When the system returns `NO_TRADE`, this is a **protective outcome**, not an error:
+
+```json
+{
+  "signal_state": "NO_TRADE",
+  "reason": "INSUFFICIENT_HISTORY",
+  "explanation": {
+    "what_this_means": "The system has insufficient evidence to justify a trade.",
+    "user_action": "No action required. Wait for more data."
+  }
+}
+```
+
+### Performance Metrics
+
+All performance metrics are:
+- **Forward-only**: Computed from actual future returns after signals were generated
+- **Never backfilled**: No historical simulation of "what would have happened"
+- **Sample-size aware**: Returns `INSUFFICIENT_SAMPLE` when data is too sparse
+
+### Data Sources
+
+| Source | Type | Notes |
+|--------|------|-------|
+| TradingView | Live prices | Real-time market data |
+| NGNMarket | Historical OHLCV | Validated, stored locally |
+| Market Breadth | Estimated | Clearly labeled as heuristic |
+
+## Limitations
+
+This system has explicit limitations that are disclosed in API responses:
+
+1. **Historical Data Required**: Technical indicators require 50+ trading sessions
+2. **Forward Data Required**: Performance evaluation requires future price data
+3. **Not Financial Advice**: All outputs are analytical tools, not recommendations to trade
+4. **Nigerian Market Only**: Designed for NGX-listed securities
+5. **No Trade Execution**: Analysis only - does not connect to brokers
+
+## API Health Endpoints
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/v1/health/trust` | Full system trust status |
+| `GET /api/v1/health/trust/banner` | Simplified banner for UI |
+| `GET /api/v1/health/explain/{code}` | Educational explanation for status codes |
+| `GET /api/v1/health/ping` | Simple liveness check |
+
+## Performance Endpoints
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/v1/performance/status` | Check if metrics are available |
+| `GET /api/v1/performance/summary` | Overall hit rates and returns |
+| `GET /api/v1/performance/calibration` | Predicted vs actual accuracy |
+
 ## Environment Variables
 
 ```env
@@ -154,6 +235,24 @@ REDIS_PORT=6379
 TRADINGVIEW_API_KEY=optional
 ```
 
+## Running Tests
+
+```bash
+# Run all tests
+poetry run pytest
+
+# Run specific phase tests
+poetry run pytest tests/test_phase0_audit.py      # Data integrity
+poetry run pytest tests/test_historical_coverage.py  # Indicator gating
+poetry run pytest tests/test_ingestion_hardening.py  # Validation
+poetry run pytest tests/test_performance_reenable.py # Performance tracking
+```
+
 ## License
 
 MIT
+
+---
+
+*This system is designed for educational and analytical purposes. 
+Always conduct your own research before making investment decisions.*

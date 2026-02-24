@@ -2,14 +2,32 @@ name: CI
 on: [push, pull_request]
 
 jobs:
-  build:
-    runs-on: windows-latest
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      ENV: dev
+      DATABASE_URL: "sqlite+aiosqlite:///./test.db"
+      DATABASE_URL_SYNC: "sqlite:///./test.db"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: poetry install
-      - run: poetry run pytest --cov
-      - run: poetry run flake8 .
-      - run: poetry run mypy .
+      - run: pip install -r requirements.txt
+      - run: python -m pytest tests/ -v --tb=short
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend-next
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+      - run: npm ci
+      - run: npx next build

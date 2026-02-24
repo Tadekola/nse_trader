@@ -65,11 +65,17 @@ const SignalCard: React.FC<SignalCardProps> = ({
     },
   };
 
+  // Determine display confidence
+  // Use confidence_score (data quality) if available, otherwise use confidence
+  // API returns decimals (e.g. 0.62), so we convert to percentage
+  const rawConfidence = recommendation.confidence_score ?? recommendation.confidence;
+  const confidencePercent = rawConfidence <= 1 ? Math.round(rawConfidence * 100) : Math.round(rawConfidence);
+
   const config = actionConfig[recommendation.action] || actionConfig.HOLD;
 
-  const confidenceColor = recommendation.confidence >= 70 
+  const confidenceColor = confidencePercent >= 70 
     ? 'text-emerald-400' 
-    : recommendation.confidence >= 50 
+    : confidencePercent >= 50 
       ? 'text-amber-400' 
       : 'text-red-400';
 
@@ -117,17 +123,17 @@ const SignalCard: React.FC<SignalCardProps> = ({
           <div className="text-right">
             <div className="flex items-center gap-1">
               <span className={`text-lg font-mono font-bold ${confidenceColor}`}>
-                {recommendation.confidence}%
+                {confidencePercent}%
               </span>
               <span className="text-xs text-[var(--color-text-tertiary)]">confidence</span>
             </div>
             <div className="w-20 h-1.5 bg-[var(--color-bg-tertiary)] rounded-full mt-1 overflow-hidden">
               <div 
                 className={`h-full rounded-full transition-all ${
-                  recommendation.confidence >= 70 ? 'bg-emerald-400' :
-                  recommendation.confidence >= 50 ? 'bg-amber-400' : 'bg-red-400'
+                  confidencePercent >= 70 ? 'bg-emerald-400' :
+                  confidencePercent >= 50 ? 'bg-amber-400' : 'bg-red-400'
                 }`}
-                style={{ width: `${recommendation.confidence}%` }}
+                style={{ width: `${confidencePercent}%` }}
               />
             </div>
           </div>

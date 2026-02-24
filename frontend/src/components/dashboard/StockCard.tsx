@@ -30,6 +30,17 @@ const StockCard: React.FC<StockCardProps> = ({
     return vol.toString();
   };
 
+  const formatSource = (source: string) => {
+    switch (source) {
+      case 'ngx_official': return 'NGX';
+      case 'ngnmarket': return 'NGN';
+      case 'apt_securities': return 'APT';
+      case 'kwayisi': return 'KWAY';
+      case 'simulated': return 'SIM';
+      default: return source.substring(0, 4).toUpperCase();
+    }
+  };
+
   if (compact) {
     return (
       <button
@@ -40,9 +51,17 @@ const StockCard: React.FC<StockCardProps> = ({
           <span className="font-medium text-sm text-[var(--color-text-primary)]">
             {stock.symbol}
           </span>
-          <span className="text-xs text-[var(--color-text-tertiary)]">
-            {stock.name?.slice(0, 15)}{stock.name?.length > 15 ? '...' : ''}
-          </span>
+          {stock.source && (
+            <span className={`text-[9px] px-1 py-0.5 rounded uppercase font-bold ${
+              stock.source === 'ngx_official' || stock.source === 'ngnmarket'
+                ? 'bg-emerald-500/10 text-emerald-400'
+                : stock.source === 'kwayisi'
+                  ? 'bg-blue-500/10 text-blue-400'
+                  : 'bg-amber-500/10 text-amber-400'
+            }`}>
+              {formatSource(stock.source)}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <span className="font-mono text-sm text-[var(--color-text-primary)]">
@@ -66,9 +85,22 @@ const StockCard: React.FC<StockCardProps> = ({
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
         <div>
-          <h4 className="font-semibold text-[var(--color-text-primary)] group-hover:text-[var(--color-accent-primary)] transition-colors">
-            {stock.symbol}
-          </h4>
+          <div className="flex items-center gap-2">
+            <h4 className="font-semibold text-[var(--color-text-primary)] group-hover:text-[var(--color-accent-primary)] transition-colors">
+              {stock.symbol}
+            </h4>
+            {stock.source && (
+              <span className={`text-[9px] px-1 py-0.5 rounded uppercase font-bold ${
+                stock.source === 'ngx_official' || stock.source === 'ngnmarket'
+                  ? 'bg-emerald-500/10 text-emerald-400'
+                  : stock.source === 'kwayisi'
+                    ? 'bg-blue-500/10 text-blue-400'
+                    : 'bg-amber-500/10 text-amber-400'
+              }`}>
+                {formatSource(stock.source)}
+              </span>
+            )}
+          </div>
           <p className="text-xs text-[var(--color-text-tertiary)] truncate max-w-[150px]">
             {stock.name}
           </p>

@@ -1,3 +1,4 @@
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -18,7 +19,37 @@ var/
 *.egg-info/
 .installed.cfg
 *.egg
+.pytest_cache/
+
+# Environments
 .env
+.env.local
 .venv
 venv/
 ENV/
+
+# Databases
+*.db
+*.db-journal
+*.sqlite3
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Archive (legacy code)
+archive/
+
+# Build artifacts
+*.log

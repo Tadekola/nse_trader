@@ -14,7 +14,9 @@ from enum import Enum
 class DataSource(str, Enum):
     """Data source identifiers."""
     NGX_OFFICIAL = "ngx_official"
+    NGX_OFFICIAL_LIST_PDF = "ngx_official_list_pdf"
     APT_SECURITIES = "apt_securities"
+    KWAYISI = "kwayisi"
     SIMULATED = "simulated"
     UNKNOWN = "unknown"
 
@@ -43,9 +45,14 @@ class PriceSnapshot:
     trades: Optional[int] = None
     previous_close: Optional[float] = None
     
+    # Simulation disclosure fields (populated when source == SIMULATED)
+    is_simulated: bool = False
+    simulated_reason: Optional[str] = None
+    simulated_inputs: Optional[Dict[str, Any]] = None  # e.g., {"market_cap": X, "shares_outstanding": Y}
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for API responses."""
-        return {
+        result = {
             'symbol': self.symbol,
             'price': self.price,
             'open': self.open,
@@ -60,7 +67,17 @@ class PriceSnapshot:
             'source': self.source.value,
             'trades': self.trades,
             'previous_close': self.previous_close,
+            'is_simulated': self.is_simulated,
         }
+        
+        # Include simulation details only when simulated
+        if self.is_simulated:
+            result['simulated_reason'] = self.simulated_reason
+            result['simulated_inputs'] = self.simulated_inputs
+            result['data_source'] = "SIMULATED"
+            result['simulation_warning'] = "This price is NOT real market data. It is derived from static registry data for demonstration purposes only."
+        
+        return result
 
 
 @dataclass

@@ -398,6 +398,232 @@ class NGXStockRegistry:
             shares_outstanding=1_964_000_000,
             liquidity_tier='low'
         ),
+        
+        # === ADDITIONAL STOCKS FROM NGNMARKET.COM ===
+        
+        # Financial Services (additional)
+        'JAIZBANK': StockInfo(
+            symbol='JAIZBANK',
+            name='Jaiz Bank Plc',
+            sector=Sector.FINANCIAL_SERVICES,
+            market_cap_billions=45.0,
+            shares_outstanding=29_464_249_300,
+            liquidity_tier='medium'
+        ),
+        'MANSARD': StockInfo(
+            symbol='MANSARD',
+            name='AXA Mansard Insurance Plc',
+            sector=Sector.FINANCIAL_SERVICES,
+            market_cap_billions=28.0,
+            shares_outstanding=2_100_000_000,
+            liquidity_tier='medium'
+        ),
+        'NEM': StockInfo(
+            symbol='NEM',
+            name='NEM Insurance Plc',
+            sector=Sector.FINANCIAL_SERVICES,
+            market_cap_billions=15.0,
+            shares_outstanding=620_000_000,
+            liquidity_tier='low'
+        ),
+        'CUSTODIAN': StockInfo(
+            symbol='CUSTODIAN',
+            name='Custodian Investment Plc',
+            sector=Sector.FINANCIAL_SERVICES,
+            market_cap_billions=22.0,
+            shares_outstanding=5_893_918_614,
+            liquidity_tier='low'
+        ),
+        'CORNERST': StockInfo(
+            symbol='CORNERST',
+            name='Cornerstone Insurance Plc',
+            sector=Sector.FINANCIAL_SERVICES,
+            market_cap_billions=8.0,
+            shares_outstanding=11_481_406_562,
+            liquidity_tier='low'
+        ),
+        
+        # Consumer Goods (additional)
+        'TRANSCOHOT': StockInfo(
+            symbol='TRANSCOHOT',
+            name='Transcorp Hotels Plc',
+            sector=Sector.SERVICES,
+            market_cap_billions=95.0,
+            shares_outstanding=10_242_090_500,
+            liquidity_tier='medium'
+        ),
+        'HONYFLOUR': StockInfo(
+            symbol='HONYFLOUR',
+            name='Honeywell Flour Mills Plc',
+            sector=Sector.CONSUMER_GOODS,
+            market_cap_billions=85.0,
+            shares_outstanding=8_986_743_463,
+            liquidity_tier='medium'
+        ),
+        'CHAMPION': StockInfo(
+            symbol='CHAMPION',
+            name='Champion Breweries Plc',
+            sector=Sector.CONSUMER_GOODS,
+            market_cap_billions=12.0,
+            shares_outstanding=3_388_000_000,
+            liquidity_tier='low'
+        ),
+        'MCNICHOLS': StockInfo(
+            symbol='MCNICHOLS',
+            name='McNichols Plc',
+            sector=Sector.CONSUMER_GOODS,
+            market_cap_billions=5.0,
+            shares_outstanding=420_000_000,
+            liquidity_tier='very_low'
+        ),
+        
+        # ICT (additional)
+        'LEGENDINT': StockInfo(
+            symbol='LEGENDINT',
+            name='Legend Internet Plc',
+            sector=Sector.ICT,
+            market_cap_billions=3.0,
+            shares_outstanding=500_000_000,
+            liquidity_tier='low'
+        ),
+        'CHAMS': StockInfo(
+            symbol='CHAMS',
+            name='Chams Holding Company Plc',
+            sector=Sector.ICT,
+            market_cap_billions=4.0,
+            shares_outstanding=7_393_505_960,
+            liquidity_tier='low'
+        ),
+        'ETRANZACT': StockInfo(
+            symbol='ETRANZACT',
+            name='eTranzact International Plc',
+            sector=Sector.ICT,
+            market_cap_billions=15.0,
+            shares_outstanding=4_275_366_750,
+            liquidity_tier='low'
+        ),
+        
+        # Industrial Goods (additional)
+        'ALEX': StockInfo(
+            symbol='ALEX',
+            name='Aluminium Extrusion Industries Plc',
+            sector=Sector.NATURAL_RESOURCES,
+            market_cap_billions=8.0,
+            shares_outstanding=569_099_627,
+            liquidity_tier='low'
+        ),
+        'AUSTINLAZ': StockInfo(
+            symbol='AUSTINLAZ',
+            name='Austin Laz & Company Plc',
+            sector=Sector.INDUSTRIAL_GOODS,
+            market_cap_billions=2.0,
+            shares_outstanding=500_000_000,
+            liquidity_tier='very_low'
+        ),
+        'BETAGLAS': StockInfo(
+            symbol='BETAGLAS',
+            name='Beta Glass Plc',
+            sector=Sector.INDUSTRIAL_GOODS,
+            market_cap_billions=180.0,
+            shares_outstanding=491_030_750,
+            liquidity_tier='low'
+        ),
+        'CUTIX': StockInfo(
+            symbol='CUTIX',
+            name='Cutix Plc',
+            sector=Sector.INDUSTRIAL_GOODS,
+            market_cap_billions=6.0,
+            shares_outstanding=1_210_000_000,
+            liquidity_tier='low'
+        ),
+        
+        # Healthcare (additional)
+        'NEIMETH': StockInfo(
+            symbol='NEIMETH',
+            name='Neimeth International Pharmaceuticals Plc',
+            sector=Sector.HEALTHCARE,
+            market_cap_billions=4.0,
+            shares_outstanding=988_192_000,
+            liquidity_tier='low'
+        ),
+        'PHARMDEKO': StockInfo(
+            symbol='PHARMDEKO',
+            name='Pharma-Deko Plc',
+            sector=Sector.HEALTHCARE,
+            market_cap_billions=1.5,
+            shares_outstanding=404_574_264,
+            liquidity_tier='very_low'
+        ),
+        'MORISON': StockInfo(
+            symbol='MORISON',
+            name='Morison Industries Plc',
+            sector=Sector.HEALTHCARE,
+            market_cap_billions=3.0,
+            shares_outstanding=443_700_000,
+            liquidity_tier='very_low'
+        ),
+        
+        # Services (additional)
+        'LEARNAFRCA': StockInfo(
+            symbol='LEARNAFRCA',
+            name='Learn Africa Plc',
+            sector=Sector.SERVICES,
+            market_cap_billions=2.5,
+            shares_outstanding=577_389_836,
+            liquidity_tier='very_low'
+        ),
+        'REDSTAREX': StockInfo(
+            symbol='REDSTAREX',
+            name='Red Star Express Plc',
+            sector=Sector.SERVICES,
+            market_cap_billions=4.0,
+            shares_outstanding=891_947_098,
+            liquidity_tier='low'
+        ),
+        'CAVERTON': StockInfo(
+            symbol='CAVERTON',
+            name='Caverton Offshore Support Group Plc',
+            sector=Sector.SERVICES,
+            market_cap_billions=8.0,
+            shares_outstanding=4_687_500_000,
+            liquidity_tier='low'
+        ),
+        
+        # Oil & Gas (additional)
+        'ETERNA': StockInfo(
+            symbol='ETERNA',
+            name='Eterna Plc',
+            sector=Sector.OIL_AND_GAS,
+            market_cap_billions=18.0,
+            shares_outstanding=1_320_000_000,
+            liquidity_tier='medium'
+        ),
+        'JAPAULOIL': StockInfo(
+            symbol='JAPAULOIL',
+            name='Japaul Gold and Ventures Plc',
+            sector=Sector.OIL_AND_GAS,
+            market_cap_billions=6.0,
+            shares_outstanding=10_000_000_000,
+            liquidity_tier='low'
+        ),
+        
+        # Conglomerates (additional)
+        'JOHNHOLT': StockInfo(
+            symbol='JOHNHOLT',
+            name='John Holt Plc',
+            sector=Sector.CONGLOMERATES,
+            market_cap_billions=3.0,
+            shares_outstanding=313_699_716,
+            liquidity_tier='very_low'
+        ),
+        'SCOA': StockInfo(
+            symbol='SCOA',
+            name='SCOA Nigeria Plc',
+            sector=Sector.CONGLOMERATES,
+            market_cap_billions=4.0,
+            shares_outstanding=351_000_000,
+            liquidity_tier='very_low'
+        ),
     }
     
     def __init__(self):

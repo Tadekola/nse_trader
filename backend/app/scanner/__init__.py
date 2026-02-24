@@ -1,0 +1,1 @@
+# NGX Quality Scanner package

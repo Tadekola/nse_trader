@@ -1,7 +1,11 @@
 """
 Recommendation Service for NSE Trader.
 
-Provides recommendation generation and management.
+Provides recommendation generation and management with:
+- Data confidence scoring (suppression when quality insufficient)
+- Probabilistic bias signals (not deterministic recommendations)
+- Market regime integration (adjusts confidence based on regime compatibility)
+- Signal lifecycle governance (TTL enforcement, NO_TRADE state)
 """
 import logging
 from typing import Optional, Dict, List, Any
@@ -16,6 +20,33 @@ from app.core.market_regime import MarketRegimeDetector, MarketRegime
 from app.core.risk_calculator import RiskCalculator, RiskLevel
 from app.core.explanation_generator import ExplanationGenerator, UserLevel
 from app.services.market_data_v2 import get_market_data_service
+from app.services.validation_service import get_validation_service
+from app.services.confidence import (
+    DataConfidenceScorer,
+    ConfidenceScore,
+    ConfidenceConfig,
+    ConfidenceLevel,
+    ReasonCode,
+    get_confidence_scorer,
+)
+from app.services.probabilistic_bias import (
+    BiasDirection,
+    convert_action_to_bias_label,
+    get_bias_calculator
+)
+from app.services.market_regime_engine import (
+    MarketRegimeEngine,
+    SessionRegime,
+    SessionRegimeAnalysis,
+    get_regime_engine
+)
+from app.services.signal_lifecycle import (
+    SignalLifecycleManager,
+    SignalState,
+    NoTradeReason,
+    LifecycleConfig,
+    get_lifecycle_manager
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,20 +61,37 @@ class RecommendationService:
     - Risk-adjusted signals
     - Explainable outputs
     - Caching for performance
+    - Data confidence scoring with suppression
     """
     
-    def __init__(self):
+    def __init__(self, confidence_config: Optional[ConfidenceConfig] = None):
         self.engine = RecommendationEngine()
         self.regime_detector = MarketRegimeDetector()
         self.risk_calculator = RiskCalculator()
         self.explanation_generator = ExplanationGenerator()
         self.market_data = get_market_data_service()
         
+        # Initialize confidence scorer with optional custom config
+        self.confidence_scorer = get_confidence_scorer(confidence_config)
+        
+        # Initialize validation service for multi-source verification
+        self.validation_service = get_validation_service()
+        
+        # Initialize probabilistic bias calculator
+        self.bias_calculator = get_bias_calculator()
+        
+        # Initialize market regime engine
+        self.regime_engine = get_regime_engine()
+        self._session_regime: Optional[SessionRegimeAnalysis] = None
+        
+        # Initialize signal lifecycle manager
+        self.lifecycle_manager = get_lifecycle_manager()
+        
         # Cache
         self._cache: Dict[str, tuple[Any, datetime]] = {}
         self._cache_ttl = timedelta(minutes=15)
     
-    def get_recommendation(
+    async def get_recommendation(
         self,
         symbol: str,
         horizon: TimeHorizon = TimeHorizon.SWING,
@@ -52,13 +100,8 @@ class RecommendationService:
         """
         Get recommendation for a single stock.
         
-        Args:
-            symbol: Stock symbol
-            horizon: Investment time horizon
-            user_level: User experience level for explanation customization
-        
-        Returns:
-            Recommendation dict or None
+        Includes data confidence scoring via multi-source validation.
+        If confidence is below threshold, the recommendation is suppressed.
         """
         symbol = symbol.upper()
         cache_key = f"rec:{symbol}:{horizon.value}"
@@ -68,19 +111,46 @@ class RecommendationService:
         if cached:
             return cached
         
-        # Get stock data
-        stock_result = self.market_data.get_stock(symbol)
-        if not stock_result.success:
-            logger.warning(f"Failed to get data for {symbol}")
-            return None
+        # Get validated data
+        try:
+            validation_result = await self.validation_service.fetch_validated([symbol])
+            validated_snapshot = validation_result.snapshots.get(symbol)
+            
+            if not validated_snapshot:
+                logger.warning(f"Failed to get data for {symbol}")
+                return None
+                
+            # Convert validation result to ConfidenceScore
+            confidence_score = self._convert_validation_to_confidence(validated_snapshot)
+            
+            # Enrich snapshot to stock_data dict
+            stock_data = self._enrich_snapshot_to_dict(validated_snapshot.snapshot)
+            
+        except Exception as e:
+            logger.error(f"Error fetching validated data for {symbol}: {e}")
+            # Fallback to direct market data fetch if validation fails
+            stock_result = await self.market_data.get_stock_async(symbol)
+            if not stock_result.success:
+                return None
+            stock_data = stock_result.data
+            confidence_score = self._calculate_confidence_score(symbol, stock_data, stock_result)
         
-        stock_data = stock_result.data
+        # Check if recommendation should be suppressed due to low confidence
+        if confidence_score.is_suppressed:
+            result = self._create_suppressed_recommendation(
+                symbol=symbol,
+                stock_data=stock_data,
+                confidence_score=confidence_score,
+                horizon=horizon
+            )
+            # Cache suppressed result (shorter TTL)
+            self._set_cache(cache_key, result)
+            return result
         
-        # Build price DataFrame (would need historical data in production)
-        # For now, create a minimal DataFrame from current data
+        # Build price DataFrame
         df = self._build_price_dataframe(stock_data)
         if df is None or len(df) < 20:
-            logger.warning(f"Insufficient data for {symbol}")
+            logger.warning("Insufficient data for %s", symbol)
             return None
         
         # Get market data for regime detection
@@ -102,16 +172,84 @@ class RecommendationService:
         # Convert to dict and add user-level explanation
         result = self._recommendation_to_dict(recommendation)
         
-        # Customize explanation for user level
+        # Add confidence score information to result
+        result['confidence_score'] = confidence_score.overall_score
+        result['data_confidence'] = confidence_score.to_dict()
+        result['suppression_reason'] = None  # Not suppressed
+        result['status'] = 'ACTIVE'
+        
+        # Calculate probabilistic bias signal
+        signals_for_bias = [
+            {"direction": s.direction, "strength": s.strength}
+            for s in recommendation.signals
+        ]
+        bias_signal = self.bias_calculator.calculate_bias(
+            internal_action=recommendation.action.value,
+            signals=signals_for_bias,
+            recommendation_confidence=recommendation.confidence,
+            data_confidence_score=confidence_score.overall_score,
+            is_suppressed=False
+        )
+        
+        # Get session regime and apply adjustments
+        session_regime = self._get_session_regime()
+        if session_regime:
+            bias_signal = self.bias_calculator.apply_regime_adjustment(
+                bias_signal=bias_signal,
+                regime_analysis=session_regime
+            )
+            result['market_regime'] = session_regime.to_dict()
+        
+        # Add probabilistic bias fields to result (external-facing)
+        result['bias_direction'] = bias_signal.bias_direction.value
+        result['bias_probability'] = bias_signal.bias_probability
+        result['bias_label'] = convert_action_to_bias_label(recommendation.action.value)
+        result['bias_signal'] = bias_signal.to_dict()
+        result['probabilistic_reasoning'] = bias_signal.reasoning
+        
+        # Update status if regime suppressed the signal
+        if bias_signal.is_suppressed and result['status'] == 'ACTIVE':
+            result['status'] = 'SUPPRESSED'
+            result['suppression_reason'] = bias_signal.suppression_reason
+        
+        # Evaluate signal lifecycle (TTL and NO_TRADE check)
+        lifecycle_result = self.lifecycle_manager.evaluate_lifecycle(
+            symbol=symbol,
+            horizon=horizon.value,
+            data_confidence=confidence_score.overall_score,
+            indicator_agreement=bias_signal.indicator_agreement,
+            regime=session_regime.regime.value if session_regime else "unknown",
+            regime_confidence=session_regime.confidence if session_regime else 0.5,
+            bias_probability=bias_signal.bias_probability or 0,
+            is_suppressed=bias_signal.is_suppressed,
+            suppression_reason=bias_signal.suppression_reason,
+            generated_at=datetime.utcnow()
+        )
+        
+        # Apply lifecycle state
+        result['lifecycle_state'] = lifecycle_result.state.value
+        result['expires_at'] = lifecycle_result.expires_at.isoformat()
+        result['is_valid'] = lifecycle_result.is_valid
+        
+        # Handle NO_TRADE state
+        if lifecycle_result.state == SignalState.NO_TRADE:
+            result['status'] = 'NO_TRADE'
+            result['bias_probability'] = None  # No probability for NO_TRADE
+            result['no_trade_decision'] = lifecycle_result.no_trade_decision.to_dict()
+            result['probabilistic_reasoning'] = lifecycle_result.reasoning
+        elif lifecycle_result.state == SignalState.SUPPRESSED:
+            result['status'] = 'SUPPRESSED'
+        
+        # Add lifecycle warnings
+        if lifecycle_result.warnings:
+            result['lifecycle_warnings'] = lifecycle_result.warnings
+        
+        # Customize explanation for user level with uncertainty-aware language
         self.explanation_generator.user_level = user_level
-        result['user_explanation'] = self.explanation_generator.explain_recommendation(
-            action=recommendation.action.value,
-            confidence=recommendation.confidence,
-            primary_reason=recommendation.primary_reason,
-            supporting_reasons=recommendation.supporting_reasons,
-            risk_level=recommendation.risk_metrics.risk_level,
-            liquidity_score=recommendation.liquidity_score,
-            regime=recommendation.market_regime
+        result['user_explanation'] = self._generate_uncertainty_aware_explanation(
+            recommendation=recommendation,
+            bias_signal=bias_signal,
+            user_level=user_level
         )
         
         # Cache result
@@ -119,7 +257,7 @@ class RecommendationService:
         
         return result
     
-    def get_top_recommendations(
+    async def get_top_recommendations(
         self,
         horizon: TimeHorizon = TimeHorizon.SWING,
         action_filter: Optional[str] = None,
@@ -142,17 +280,22 @@ class RecommendationService:
         """
         # Get appropriate stock list based on liquidity
         if min_liquidity == "high":
-            stocks_result = self.market_data.get_high_liquidity_stocks()
+            stocks_result = await self.market_data.get_high_liquidity_stocks_async()
         elif sector_filter:
-            stocks_result = self.market_data.get_stocks_by_sector(sector_filter)
+            stocks_result = await self.market_data.get_all_stocks_async()
+            # Filter later or implement specific async method
         else:
-            stocks_result = self.market_data.get_all_stocks()
+            stocks_result = await self.market_data.get_all_stocks_async()
         
         if not stocks_result.success:
             return []
         
         stocks = stocks_result.data
         
+        # Filter by sector if needed (if we fetched all)
+        if sector_filter:
+             stocks = [s for s in stocks if s.get('sector') == sector_filter]
+
         # Filter by liquidity
         liquidity_order = ['high', 'medium', 'low', 'very_low']
         min_index = liquidity_order.index(min_liquidity) if min_liquidity in liquidity_order else 2
@@ -168,7 +311,7 @@ class RecommendationService:
         recommendations = []
         for stock in stocks:
             try:
-                rec = self._generate_recommendation_from_data(
+                rec = await self._generate_recommendation_from_data(
                     stock_data=stock,
                     horizon=horizon
                 )
@@ -185,73 +328,14 @@ class RecommendationService:
         recommendations.sort(key=lambda x: x.get('confidence', 0), reverse=True)
         
         return recommendations[:limit]
-    
-    def _generate_recommendation_from_data(
-        self,
-        stock_data: Dict[str, Any],
-        horizon: TimeHorizon = TimeHorizon.SWING,
-        user_level: UserLevel = UserLevel.BEGINNER
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Generate recommendation from already-fetched stock data.
-        Avoids redundant API calls by reusing data.
-        """
-        symbol = stock_data.get('symbol', '').upper()
-        cache_key = f"rec:{symbol}:{horizon.value}"
-        
-        # Check cache first
-        cached = self._get_from_cache(cache_key)
-        if cached:
-            return cached
-        
-        # Build price DataFrame from existing data
-        df = self._build_price_dataframe(stock_data)
-        if df is None or len(df) < 20:
-            return None
-        
-        # Get market data for regime detection (cached internally)
-        market_df = self._get_market_dataframe()
-        
-        # Generate recommendation
-        recommendation = self.engine.generate_recommendation(
-            symbol=symbol,
-            name=stock_data.get('name', symbol),
-            price_data=df,
-            horizon=horizon,
-            market_data=market_df,
-            fundamental_data=self._extract_fundamentals(stock_data)
-        )
-        
-        if recommendation is None:
-            return None
-        
-        # Convert to dict and add user-level explanation
-        result = self._recommendation_to_dict(recommendation)
-        
-        # Customize explanation for user level
-        self.explanation_generator.user_level = user_level
-        result['user_explanation'] = self.explanation_generator.explain_recommendation(
-            action=recommendation.action.value,
-            confidence=recommendation.confidence,
-            primary_reason=recommendation.primary_reason,
-            supporting_reasons=recommendation.supporting_reasons,
-            risk_level=recommendation.risk_metrics.risk_level,
-            liquidity_score=recommendation.liquidity_score,
-            regime=recommendation.market_regime
-        )
-        
-        # Cache result
-        self._set_cache(cache_key, result)
-        
-        return result
-    
-    def get_buy_recommendations(
+
+    async def get_buy_recommendations(
         self,
         horizon: TimeHorizon = TimeHorizon.SWING,
         limit: int = 5
     ) -> List[Dict[str, Any]]:
         """Get top buy recommendations."""
-        recs = self.get_top_recommendations(
+        recs = await self.get_top_recommendations(
             horizon=horizon,
             action_filter=None,
             min_liquidity="medium",
@@ -266,13 +350,13 @@ class RecommendationService:
         
         return buys[:limit]
     
-    def get_sell_recommendations(
+    async def get_sell_recommendations(
         self,
         horizon: TimeHorizon = TimeHorizon.SWING,
         limit: int = 5
     ) -> List[Dict[str, Any]]:
         """Get top sell recommendations."""
-        recs = self.get_top_recommendations(
+        recs = await self.get_top_recommendations(
             horizon=horizon,
             action_filter=None,
             min_liquidity="low",
@@ -338,52 +422,234 @@ class RecommendationService:
         self._set_cache(cache_key, result)
         return result
     
-    def _build_price_dataframe(self, stock_data: Dict) -> Optional[pd.DataFrame]:
-        """Build price DataFrame from stock data."""
-        # In production, this would fetch historical data
-        # For now, create minimal DataFrame
-        try:
-            df = pd.DataFrame([{
-                'Open': stock_data.get('open', stock_data.get('price', 0)),
-                'High': stock_data.get('high', stock_data.get('price', 0)),
-                'Low': stock_data.get('low', stock_data.get('price', 0)),
-                'Close': stock_data.get('close', stock_data.get('price', 0)),
-                'Volume': stock_data.get('volume', 0)
-            }] * 50, index=pd.date_range(end=datetime.utcnow(), periods=50, freq='D'))
-            
-            # Add some variation for indicator calculation
-            import numpy as np
-            noise = np.random.normal(1, 0.02, len(df))
-            df['Close'] = df['Close'] * noise
-            df['High'] = df['Close'] * 1.02
-            df['Low'] = df['Close'] * 0.98
-            df['Open'] = df['Close'].shift(1).fillna(df['Close'])
-            
-            return df
-        except Exception as e:
-            logger.error(f"Error building DataFrame: {e}")
-            return None
+    def _calculate_confidence_score(
+        self,
+        symbol: str,
+        stock_data: Dict[str, Any],
+        market_data_result: Any
+    ) -> ConfidenceScore:
+        """
+        Calculate confidence score for stock data from market data result.
+        
+        Builds source data list from the market data result and stock data,
+        then delegates to the confidence scorer.
+        
+        Args:
+            symbol: Stock symbol
+            stock_data: Stock data dictionary
+            market_data_result: MarketDataResult from market data service
+        
+        Returns:
+            ConfidenceScore with suppression decision
+        """
+        # Build source data list from available information
+        source_data = []
+        
+        # Primary source from market data result
+        primary_source = {
+            "source": market_data_result.source if market_data_result else "unknown",
+            "price": stock_data.get("price", 0),
+            "volume": stock_data.get("volume", 0),
+            "timestamp": stock_data.get("timestamp", datetime.utcnow().isoformat())
+        }
+        source_data.append(primary_source)
+        
+        # Check for validation/discrepancy data indicating multiple sources
+        if "discrepancies" in stock_data:
+            for disc in stock_data["discrepancies"]:
+                if isinstance(disc, dict) and "values" in disc:
+                    for src_name, val in disc["values"].items():
+                        if src_name != primary_source["source"]:
+                            source_data.append({
+                                "source": src_name,
+                                "price": val if disc.get("field") == "price" else primary_source["price"],
+                                "volume": val if disc.get("field") == "volume" else primary_source["volume"],
+                                "timestamp": primary_source["timestamp"]
+                            })
+        
+        # Check if circuit breaker might be active (from validation_status)
+        circuit_breaker_active = stock_data.get("validation_status") == "circuit_breaker"
+        
+        return self.confidence_scorer.calculate_confidence(
+            symbol=symbol,
+            source_data=source_data,
+            circuit_breaker_active=circuit_breaker_active
+        )
     
-    def _get_market_dataframe(self) -> Optional[pd.DataFrame]:
-        """Get market (ASI) DataFrame."""
-        # Would fetch ASI historical data in production
+    def _create_suppressed_recommendation(
+        self,
+        symbol: str,
+        stock_data: Dict[str, Any],
+        confidence_score: ConfidenceScore,
+        horizon: TimeHorizon
+    ) -> Dict[str, Any]:
+        """
+        Create a suppressed recommendation response when data confidence is insufficient.
+        
+        Returns a recommendation dict with status="SUPPRESSED" and no actionable signals.
+        
+        Args:
+            symbol: Stock symbol
+            stock_data: Stock data dictionary
+            confidence_score: The calculated confidence score
+            horizon: Investment time horizon
+        
+        Returns:
+            Dictionary with suppressed recommendation data
+        """
+        return {
+            "symbol": symbol,
+            "name": stock_data.get("name", symbol),
+            "action": "HOLD",  # Default to HOLD when suppressed
+            "horizon": horizon.value,
+            "confidence": 0.0,  # No confidence in recommendation
+            "current_price": stock_data.get("price", 0),
+            "primary_reason": "Recommendation suppressed due to insufficient data quality",
+            "supporting_reasons": [
+                reason.value for reason in confidence_score.suppression_reasons
+            ],
+            "risk_warnings": [
+                "Data quality insufficient for reliable recommendation",
+                confidence_score.human_readable_reason or "Multiple data quality issues detected"
+            ],
+            "explanation": (
+                f"The recommendation for {symbol} has been suppressed because "
+                f"data confidence ({confidence_score.overall_score:.1%}) is below the required threshold. "
+                f"Reason: {confidence_score.human_readable_reason}"
+            ),
+            "liquidity_score": stock_data.get("liquidity_tier", "unknown"),
+            "liquidity_warning": None,
+            "market_regime": "unknown",
+            "risk_level": "unknown",
+            "volatility": None,
+            "entry_exit": None,
+            "signals": [],
+            "timestamp": datetime.utcnow().isoformat(),
+            "valid_until": None,
+            # Confidence scoring fields
+            "status": "SUPPRESSED",
+            "confidence_score": confidence_score.overall_score,
+            "data_confidence": confidence_score.to_dict(),
+            "suppression_reason": confidence_score.human_readable_reason,
+            # Probabilistic bias fields - NO probability for suppressed signals
+            "bias_direction": BiasDirection.NEUTRAL.value,
+            "bias_probability": None,  # Never include probability when suppressed
+            "bias_label": "Neutral Bias",
+            "bias_signal": {
+                "bias_direction": BiasDirection.NEUTRAL.value,
+                "is_suppressed": True,
+                "suppression_reason": confidence_score.human_readable_reason,
+                "reasoning": (
+                    "Signal analysis is currently suppressed due to insufficient data quality. "
+                    f"Reason: {confidence_score.human_readable_reason}"
+                )
+            },
+            "probabilistic_reasoning": (
+                "Unable to compute directional bias due to insufficient data quality. "
+                "No probability assessment is available when data confidence is below threshold."
+            ),
+            "user_explanation": (
+                f"We cannot provide a reliable directional bias for {symbol} at this time. "
+                f"The data quality score is {confidence_score.overall_score:.0%}, which is below our "
+                f"minimum threshold for generating probabilistic signals. "
+                f"This is typically caused by: {confidence_score.human_readable_reason}. "
+                f"Please check back later when more reliable data is available."
+            )
+        }
+    
+    def _build_price_dataframe(self, stock_data: Dict) -> Optional[pd.DataFrame]:
+        """
+        Build price DataFrame from REAL historical OHLCV storage.
+
+        Hard governance:
+        - Returns None if symbol has < MIN_OHLCV_SESSIONS sessions.
+        - Returns None if data is stale (> OHLCV_STALENESS_DAYS).
+        - NEVER fabricates data. Missing data → None → NO_TRADE upstream.
+        """
+        from app.data.historical.storage import get_historical_storage
+        from app.core.config import get_settings
+
+        symbol = stock_data.get("symbol", "").upper()
+        if not symbol:
+            logger.warning("_build_price_dataframe called without symbol")
+            return None
+
+        settings = get_settings()
+        storage = get_historical_storage()
+
+        # Check metadata first (fast path)
+        metadata = storage.get_metadata(symbol)
+        if metadata is None:
+            logger.warning(
+                "NO_TRADE[%s]: No historical data — symbol never ingested", symbol
+            )
+            return None
+
+        if metadata.total_sessions < settings.MIN_OHLCV_SESSIONS:
+            logger.warning(
+                "NO_TRADE[%s]: Insufficient history — %d sessions (need %d)",
+                symbol, metadata.total_sessions, settings.MIN_OHLCV_SESSIONS,
+            )
+            return None
+
+        if metadata.is_stale(settings.OHLCV_STALENESS_DAYS):
+            reason = metadata.get_stale_reason(settings.OHLCV_STALENESS_DAYS)
+            logger.warning("NO_TRADE[%s]: Stale data — %s", symbol, reason)
+            return None
+
+        # Fetch real OHLCV as DataFrame
         try:
-            df = pd.DataFrame({
-                'Open': [50000] * 250,
-                'High': [51000] * 250,
-                'Low': [49000] * 250,
-                'Close': [50500] * 250,
-                'Volume': [1000000000] * 250
-            }, index=pd.date_range(end=datetime.utcnow(), periods=250, freq='D'))
-            
-            # Add some variation
-            import numpy as np
-            trend = np.linspace(0.95, 1.05, len(df))
-            noise = np.random.normal(1, 0.01, len(df))
-            df['Close'] = df['Close'] * trend * noise
-            
+            df = storage.get_ohlcv_dataframe(
+                symbol, min_sessions=settings.MIN_OHLCV_SESSIONS
+            )
+            if df is None or df.empty:
+                logger.warning(
+                    "NO_TRADE[%s]: Storage returned empty DataFrame", symbol
+                )
+                return None
+
+            logger.info(
+                "Real OHLCV loaded for %s: %d sessions [%s → %s]",
+                symbol, len(df), df.index[0].date(), df.index[-1].date(),
+            )
             return df
-        except Exception:
+
+        except Exception as e:
+            logger.error("Error loading OHLCV for %s: %s", symbol, e)
+            return None
+
+    def _get_market_dataframe(self) -> Optional[pd.DataFrame]:
+        """
+        Get market (ASI) DataFrame from REAL historical storage.
+
+        Fail-safe: returns None if ASI data is missing or insufficient.
+        Callers must treat None as regime=UNKNOWN → NO_TRADE.
+        """
+        from app.data.historical.storage import get_historical_storage
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        storage = get_historical_storage()
+
+        try:
+            df = storage.get_ohlcv_dataframe(
+                "ASI", min_sessions=settings.MIN_ASI_SESSIONS
+            )
+            if df is None or df.empty:
+                logger.warning(
+                    "NO_TRADE[ASI]: Insufficient ASI history (need %d sessions)",
+                    settings.MIN_ASI_SESSIONS,
+                )
+                return None
+
+            logger.info(
+                "Real ASI loaded: %d sessions [%s → %s]",
+                len(df), df.index[0].date(), df.index[-1].date(),
+            )
+            return df
+
+        except Exception as e:
+            logger.error("Error loading ASI data: %s", e)
             return None
     
     def _extract_fundamentals(self, stock_data: Dict) -> Dict[str, Any]:
@@ -394,6 +660,175 @@ class RecommendationService:
             'dividend_yield': stock_data.get('dividend_yield'),
             'market_cap': stock_data.get('market_cap')
         }
+    
+    def _get_session_regime(self) -> Optional[SessionRegimeAnalysis]:
+        """
+        Get the current session's market regime classification.
+        
+        Runs once per session and caches the result.
+        Uses ASI price and volume data for classification.
+        
+        Returns:
+            SessionRegimeAnalysis or None if insufficient data
+        """
+        # Return cached regime if available
+        if self._session_regime is not None:
+            return self._session_regime
+        
+        try:
+            # Get market dataframe for regime classification
+            market_df = self._get_market_dataframe()
+            if market_df is None or len(market_df) < 60:
+                logger.warning("Insufficient market data for regime classification")
+                return None
+            
+            # Extract prices and volumes for regime engine
+            asi_prices = market_df['Close'].tolist()
+            asi_volumes = market_df['Volume'].tolist()
+            current_volume = asi_volumes[-1] if asi_volumes else None
+            
+            # Classify session regime
+            self._session_regime = self.regime_engine.classify_session(
+                asi_prices=asi_prices,
+                asi_volumes=asi_volumes,
+                current_volume=current_volume
+            )
+            
+            logger.info(
+                "Session regime classified: %s (confidence: %.1f%%)",
+                self._session_regime.regime.value,
+                self._session_regime.confidence * 100
+            )
+            
+            return self._session_regime
+            
+        except Exception as e:
+            logger.warning("Failed to classify market regime: %s", e)
+            return None
+    
+    def _convert_validation_to_confidence(self, validated_snapshot: Any) -> ConfidenceScore:
+        """Convert ValidatedSnapshot to ConfidenceScore."""
+        # Determine sources
+        sources_used = [validated_snapshot.snapshot.source.value]
+        primary_source = validated_snapshot.snapshot.source.value
+        secondary_source = None
+        
+        if validated_snapshot.validation and validated_snapshot.validation.secondary_price:
+            sources_used.append("kwayisi")
+            secondary_source = "kwayisi"
+
+        is_suppressed = validated_snapshot.confidence_score < 0.75
+            
+        return ConfidenceScore(
+            symbol=validated_snapshot.snapshot.symbol,
+            overall_score=validated_snapshot.confidence_score,
+            confidence_level=ConfidenceLevel.SUPPRESSED if is_suppressed else ConfidenceLevel.HIGH,
+            price_agreement_score=1.0 if validated_snapshot.is_validated else 0.5,
+            volume_agreement_score=0.8,
+            freshness_score=0.9,
+            source_availability_score=1.0 if len(sources_used) > 1 else 0.5,
+            is_suppressed=is_suppressed,
+            reason_codes=[ReasonCode.LOW_OVERALL_CONFIDENCE] if is_suppressed else [],
+            human_readable_reason="Insufficient data confidence" if is_suppressed else None,
+            sources_used=sources_used,
+            primary_source=primary_source,
+            secondary_source=secondary_source,
+            price_variance_percent=validated_snapshot.validation.price_difference_percent if validated_snapshot.validation and validated_snapshot.validation.price_difference_percent is not None else 0.0,
+            volume_variance_percent=0.0,
+            data_age_seconds=0.0,
+        )
+
+    def _enrich_snapshot_to_dict(self, snapshot: Any) -> Dict[str, Any]:
+        """Enrich price snapshot with registry data."""
+        registry_info = self.market_data.registry.get_stock(snapshot.symbol) or {}
+        
+        enriched = snapshot.to_dict()
+        enriched['name'] = registry_info.get('name', snapshot.symbol)
+        enriched['sector'] = registry_info.get('sector', {})
+        if hasattr(enriched['sector'], 'value'):
+            enriched['sector'] = enriched['sector'].value
+        enriched['liquidity_tier'] = registry_info.get('liquidity_tier', 'unknown')
+        enriched['market_cap_billions'] = registry_info.get('market_cap_billions')
+        enriched['shares_outstanding'] = registry_info.get('shares_outstanding')
+        enriched['is_active'] = registry_info.get('is_active', True)
+        
+        # Calculate market cap if not present
+        if enriched.get('market_cap_billions') and not enriched.get('market_cap'):
+            enriched['market_cap'] = enriched['market_cap_billions'] * 1e9
+            
+        return enriched
+
+    def _generate_uncertainty_aware_explanation(
+        self,
+        recommendation: Recommendation,
+        bias_signal,
+        user_level: UserLevel
+    ) -> str:
+        """
+        Generate user explanation with uncertainty-aware language.
+        
+        Replaces deterministic language like "strong buy" with probabilistic
+        language like "suggests bullish bias".
+        
+        Args:
+            recommendation: The recommendation object
+            bias_signal: Calculated bias signal
+            user_level: User experience level
+        
+        Returns:
+            Uncertainty-aware explanation string
+        """
+        symbol = recommendation.symbol
+        bias_dir = bias_signal.bias_direction.value
+        prob = bias_signal.bias_probability
+        
+        # Probability-based confidence descriptor
+        if prob >= 80:
+            confidence_text = "high confidence"
+            verb = "strongly suggests"
+        elif prob >= 65:
+            confidence_text = "moderate confidence"
+            verb = "suggests"
+        elif prob >= 50:
+            confidence_text = "modest confidence"
+            verb = "leans toward"
+        else:
+            confidence_text = "low confidence"
+            verb = "shows slight indication of"
+        
+        # Bias direction text
+        direction_text = {
+            "bullish": "bullish bias with potential upside",
+            "neutral": "neutral positioning with no clear directional edge",
+            "bearish": "bearish bias with potential downside"
+        }.get(bias_dir, "neutral stance")
+        
+        # Build explanation based on user level
+        if user_level == UserLevel.BEGINNER:
+            explanation = (
+                f"Our analysis of {symbol} {verb} a {direction_text}. "
+                f"The probability assessment is {prob}% ({confidence_text}). "
+                f"This means the technical and fundamental indicators lean "
+                f"{'positively' if bias_dir == 'bullish' else 'negatively' if bias_dir == 'bearish' else 'neither strongly positive nor negative'}. "
+                f"Remember: This is not financial advice. Market conditions can change rapidly."
+            )
+        elif user_level == UserLevel.INTERMEDIATE:
+            explanation = (
+                f"{symbol}: {verb.capitalize()} {direction_text}. "
+                f"Probability: {prob}% | Agreement: {bias_signal.indicator_agreement:.0%} of indicators aligned. "
+                f"Data confidence factor: {bias_signal.data_confidence_factor:.2f}. "
+                f"Primary driver: {recommendation.primary_reason}"
+            )
+        else:  # ADVANCED
+            explanation = (
+                f"{symbol} | Bias: {bias_dir.upper()} @ {prob}% probability | "
+                f"Indicator agreement: {bias_signal.indicator_agreement:.1%} | "
+                f"Signal magnitude: {bias_signal.signal_magnitude:.2f} | "
+                f"Confidence penalty: {1-bias_signal.data_confidence_factor:.1%} | "
+                f"Regime: {recommendation.market_regime.value}"
+            )
+        
+        return explanation
     
     def _recommendation_to_dict(self, rec: Recommendation) -> Dict[str, Any]:
         """Convert Recommendation to dict."""

@@ -6,11 +6,35 @@
  * - Error handling
  * - UI primitives
  * - Validation schemas
+ * - Progressive data hooks
  */
 
 // API
 export { api, apiRequest, ApiError, NetworkError, TimeoutError, API_BASE_URL } from './api/client';
 export { stocksService, recommendationsService, validatedApi } from './api/services';
+
+// UI-Optimized API
+export {
+  getPulse,
+  getSummary,
+  getStockDetail,
+  getStatusExplanation,
+  getMarketStream,
+  type PulseData,
+  type SummaryData,
+  type StockDetail,
+  type MoverStock,
+  type StatusExplanation,
+} from './api/uiService';
+
+// Progressive Data Hooks
+export {
+  usePulse,
+  useSummary,
+  useStockDetail,
+  useMarketStream,
+  useProgressiveData,
+} from './hooks/useProgressiveData';
 
 // Schemas & Validation
 export {

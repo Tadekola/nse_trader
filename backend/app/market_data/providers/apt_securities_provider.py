@@ -24,6 +24,8 @@ try:
 except ImportError:
     BS4_AVAILABLE = False
 
+from app.core.http import http_fetch
+
 from .base import (
     MarketDataProvider,
     PriceSnapshot,
@@ -70,7 +72,7 @@ class AptSecuritiesDailyPriceProvider(MarketDataProvider):
         'value': ['value', 'turnover'],
     }
     
-    def __init__(self, timeout: float = 2.0):
+    def __init__(self, timeout: float = 15.0):
         self._timeout = timeout
         self._last_fetch: Optional[datetime] = None
     
@@ -162,31 +164,28 @@ class AptSecuritiesDailyPriceProvider(MarketDataProvider):
     async def _fetch_apt_data(self) -> Dict[str, PriceSnapshot]:
         """Fetch and parse Apt Securities price data."""
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                # Try primary URL
-                urls_to_try = [self.APT_URL] + self.ALTERNATIVE_URLS
-                
-                for url in urls_to_try:
-                    try:
-                        response = await client.get(
-                            url,
-                            headers={
-                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                                'Accept': 'text/html',
-                            },
-                            follow_redirects=True
-                        )
-                        
-                        if response.status_code == 200:
-                            data = self._parse_html_response(response.text)
-                            if data:
-                                logger.info(f"Apt Securities: fetched {len(data)} stocks from {url}")
-                                return data
-                    except Exception as e:
-                        logger.debug(f"Apt Securities URL {url} failed: {e}")
-                        continue
-                
-                return {}
+            # Try primary URL then alternatives
+            urls_to_try = [self.APT_URL] + self.ALTERNATIVE_URLS
+            
+            for url in urls_to_try:
+                try:
+                    response = await http_fetch(
+                        url,
+                        timeout=self._timeout,
+                        headers={'Accept': 'text/html'},
+                        raise_for_status=False,
+                    )
+                    
+                    if response.status_code == 200:
+                        data = self._parse_html_response(response.text)
+                        if data:
+                            logger.info(f"Apt Securities: fetched {len(data)} stocks from {url}")
+                            return data
+                except Exception as e:
+                    logger.debug(f"Apt Securities URL {url} failed: {e}")
+                    continue
+            
+            return {}
                 
         except httpx.TimeoutException:
             logger.error("Apt Securities request timed out")

@@ -12,7 +12,6 @@ import {
   MarketSummarySchema,
   MarketRegimeSchema,
   RecommendationSchema,
-  DataMetaSchema,
   validateApiResponse,
   type Stock,
   type MarketSummary,

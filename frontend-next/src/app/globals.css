@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@layer base {
+  body {
+    @apply bg-terminal-bg text-terminal-text font-sans antialiased;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-terminal-surface border border-terminal-border rounded-lg;
+  }
+
+  .card-header {
+    @apply px-4 py-3 border-b border-terminal-border flex items-center justify-between;
+  }
+
+  .card-body {
+    @apply p-4;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-medium;
+  }
+
+  .badge-green {
+    @apply bg-terminal-green/15 text-terminal-green border border-terminal-green/30;
+  }
+
+  .badge-red {
+    @apply bg-terminal-red/15 text-terminal-red border border-terminal-red/30;
+  }
+
+  .badge-amber {
+    @apply bg-terminal-amber/15 text-terminal-amber border border-terminal-amber/30;
+  }
+
+  .badge-blue {
+    @apply bg-terminal-accent/15 text-terminal-accent border border-terminal-accent/30;
+  }
+
+  .badge-dim {
+    @apply bg-terminal-dim/15 text-terminal-dim border border-terminal-dim/30;
+  }
+
+  .stat-value {
+    @apply text-2xl font-mono font-semibold tracking-tight;
+  }
+
+  .stat-label {
+    @apply text-xs font-medium text-terminal-dim uppercase tracking-wider;
+  }
+
+  .table-header {
+    @apply text-xs font-medium text-terminal-dim uppercase tracking-wider text-left px-3 py-2;
+  }
+
+  .table-cell {
+    @apply px-3 py-2.5 text-sm font-mono;
+  }
+
+  .table-row {
+    @apply border-b border-terminal-border/50 hover:bg-terminal-border/20 transition-colors;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-md bg-terminal-accent text-white text-sm font-medium hover:bg-terminal-accent/90 transition-colors;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium text-terminal-muted hover:text-terminal-text hover:bg-terminal-border/30 transition-colors;
+  }
+
+  .toggle-group {
+    @apply inline-flex rounded-md border border-terminal-border overflow-hidden;
+  }
+
+  .toggle-item {
+    @apply px-3 py-1.5 text-xs font-mono font-medium text-terminal-dim hover:text-terminal-text transition-colors border-r border-terminal-border last:border-r-0;
+  }
+
+  .toggle-item-active {
+    @apply bg-terminal-accent/20 text-terminal-accent;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-terminal-border rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-terminal-border-bright;
+}

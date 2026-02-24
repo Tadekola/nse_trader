@@ -94,7 +94,9 @@ const Signals: React.FC = () => {
             'bg-amber-500/10 text-amber-400'
           }`}>
             <span className="font-medium">{marketRegime.regime.replace('_', ' ').toUpperCase()}</span>
-            <span className="text-xs ml-2 opacity-75">{marketRegime.confidence}% conf</span>
+            <span className="text-xs ml-2 opacity-75">
+              {marketRegime.confidence <= 1 ? (marketRegime.confidence * 100).toFixed(0) : marketRegime.confidence}% conf
+            </span>
           </div>
         )}
       </div>

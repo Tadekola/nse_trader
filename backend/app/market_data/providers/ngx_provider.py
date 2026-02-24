@@ -25,6 +25,8 @@ try:
 except ImportError:
     BS4_AVAILABLE = False
 
+from app.core.http import http_fetch
+
 from .base import (
     MarketDataProvider,
     PriceSnapshot,
@@ -69,7 +71,7 @@ class NgxEquitiesPriceListProvider(MarketDataProvider):
         'previous_close': ['previous', 'prev', 'prev close', 'previous close', 'ref price'],
     }
     
-    def __init__(self, timeout: float = 2.0):
+    def __init__(self, timeout: float = 15.0):
         self._timeout = timeout
         self._last_fetch: Optional[datetime] = None
         self._cached_data: Dict[str, PriceSnapshot] = {}
@@ -162,37 +164,36 @@ class NgxEquitiesPriceListProvider(MarketDataProvider):
     async def _fetch_ngx_data(self) -> Dict[str, PriceSnapshot]:
         """Fetch and parse NGX price list data."""
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                # Try the API endpoint first (faster, structured data)
-                try:
-                    response = await client.get(
-                        self.NGX_API_URL,
-                        headers={
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                            'Accept': 'application/json',
-                            'Referer': self.NGX_PRICE_LIST_URL,
-                        }
-                    )
-                    if response.status_code == 200:
-                        data = response.json()
-                        return self._parse_api_response(data)
-                except Exception as e:
-                    logger.debug(f"NGX API failed, trying HTML: {e}")
-                
-                # Fallback to HTML scraping
-                response = await client.get(
-                    self.NGX_PRICE_LIST_URL,
+            # Try the API endpoint first (faster, structured data)
+            try:
+                response = await http_fetch(
+                    self.NGX_API_URL,
+                    timeout=self._timeout,
                     headers={
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                        'Accept': 'text/html',
-                    }
+                        'Accept': 'application/json',
+                        'Referer': self.NGX_PRICE_LIST_URL,
+                    },
+                    raise_for_status=False,
                 )
-                
-                if response.status_code != 200:
-                    logger.error(f"NGX HTTP error: {response.status_code}")
-                    return {}
-                
-                return self._parse_html_response(response.text)
+                if response.status_code == 200:
+                    data = response.json()
+                    return self._parse_api_response(data)
+            except Exception as e:
+                logger.debug(f"NGX API failed, trying HTML: {e}")
+            
+            # Fallback to HTML scraping
+            response = await http_fetch(
+                self.NGX_PRICE_LIST_URL,
+                timeout=self._timeout,
+                headers={'Accept': 'text/html'},
+                raise_for_status=False,
+            )
+            
+            if response.status_code != 200:
+                logger.error(f"NGX HTTP error: {response.status_code}")
+                return {}
+            
+            return self._parse_html_response(response.text)
                 
         except httpx.TimeoutException:
             logger.error("NGX request timed out")

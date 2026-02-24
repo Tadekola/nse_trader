@@ -1,6 +1,25 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nse_trader_postgres
+    environment:
+      POSTGRES_USER: nse_trader
+      POSTGRES_PASSWORD: nse_trader
+      POSTGRES_DB: nse_trader
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - nse_trader_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nse_trader"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: ./backend
@@ -8,18 +27,18 @@ services:
     container_name: nse_trader_backend
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
-      - ./backend/app:/app/app # Mount app code for hot-reloading
+      - ./backend/app:/app/app
+      - ./backend/data:/app/data
     ports:
-      - "8000:8000"
+      - "8001:8000"
     env_file:
-      - ./backend/.env # Load environment variables from .env file
+      - ./backend/.env
     environment:
-      # Override settings from .env if needed, especially for service discovery
-      - REDIS_HOST=redis
-      - RABBITMQ_HOST=rabbitmq
+      - DATABASE_URL=postgresql+asyncpg://nse_trader:nse_trader@postgres:5432/nse_trader
+      - DATABASE_URL_SYNC=postgresql+psycopg2://nse_trader:nse_trader@postgres:5432/nse_trader
     depends_on:
-      - redis
-      - rabbitmq
+      postgres:
+        condition: service_healthy
     networks:
       - nse_trader_network
 
@@ -27,69 +46,18 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      # Pass build arguments if needed (e.g., API URL)
-      # args:
-      #   - VITE_API_BASE_URL=http://localhost:8000/api/v1
     container_name: nse_trader_frontend
     ports:
-      - "8080:80" # Map container port 80 to host port 8080
+      - "8080:80"
     depends_on:
-      - backend # Frontend might need backend to be up
+      - backend
     networks:
       - nse_trader_network
-
-  redis:
-    image: redis:7-alpine
-    container_name: nse_trader_redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    networks:
-      - nse_trader_network
-
-  rabbitmq:
-    image: rabbitmq:3.12-management-alpine
-    container_name: nse_trader_rabbitmq
-    ports:
-      - "5672:5672" # AMQP port
-      - "15672:15672" # Management UI port
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq/
-    # Set default user/password if needed (align with .env)
-    # environment:
-    #   - RABBITMQ_DEFAULT_USER=guest
-    #   - RABBITMQ_DEFAULT_PASS=guest
-    networks:
-      - nse_trader_network
-
-  # --- Worker Service (Uncomment and configure when ready) ---
-  # worker:
-  #   build:
-  #     context: ./backend # Worker uses the same backend image
-  #     dockerfile: Dockerfile
-  #   container_name: nse_trader_worker
-  #   command: celery -A app.workers.celery_app worker --loglevel=info
-  #   volumes:
-  #     - ./backend/app:/app/app # Mount code for consistency
-  #   env_file:
-  #     - ./backend/.env
-  #   environment:
-  #     - REDIS_HOST=redis
-  #     - RABBITMQ_HOST=rabbitmq
-  #   depends_on:
-  #     - redis
-  #     - rabbitmq
-  #     - backend # May need backend models/logic
-  #   networks:
-  #     - nse_trader_network
 
 networks:
   nse_trader_network:
     driver: bridge
 
 volumes:
-  redis_data:
-    driver: local
-  rabbitmq_data:
+  postgres_data:
     driver: local

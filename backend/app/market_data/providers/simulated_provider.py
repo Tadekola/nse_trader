@@ -178,4 +178,13 @@ class SimulatedProvider(MarketDataProvider):
             timestamp=datetime.utcnow(),
             source=DataSource.SIMULATED,
             previous_close=open_price,
+            # Simulation disclosure - REQUIRED for transparency
+            is_simulated=True,
+            simulated_reason="Real-time data sources unavailable; price derived from static registry data",
+            simulated_inputs={
+                "market_cap_billions": registry_info.get('market_cap_billions'),
+                "shares_outstanding": registry_info.get('shares_outstanding'),
+                "liquidity_tier": registry_info.get('liquidity_tier'),
+                "base_price_formula": "market_cap / shares_outstanding",
+            },
         )

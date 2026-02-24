@@ -29,6 +29,7 @@ class SourceBreakdown:
     """Breakdown of data sources used in a fetch."""
     ngx_official: int = 0
     apt_securities: int = 0
+    kwayisi: int = 0
     simulated: int = 0
     total: int = 0
     
@@ -36,6 +37,7 @@ class SourceBreakdown:
         return {
             'ngx_official': self.ngx_official,
             'apt_securities': self.apt_securities,
+            'kwayisi': self.kwayisi,
             'simulated': self.simulated,
             'total': self.total,
         }
@@ -52,6 +54,8 @@ class ChainFetchResult:
     last_updated: datetime = field(default_factory=datetime.utcnow)
     errors: List[str] = field(default_factory=list)
     fetch_time_ms: float = 0.0
+    # Phase 1: Simulation metrics
+    simulation_rate: float = 0.0  # simulated_count / total
     
     def to_meta_dict(self) -> Dict[str, Any]:
         """Return metadata for API responses."""
@@ -60,6 +64,7 @@ class ChainFetchResult:
             'is_simulated': self.is_simulated,
             'simulated_count': len(self.simulated_symbols),
             'simulated_symbols': self.simulated_symbols,
+            'simulation_rate': round(self.simulation_rate, 4),
             'last_updated': self.last_updated.isoformat(),
             'fetch_time_ms': round(self.fetch_time_ms, 2),
         }
@@ -120,17 +125,18 @@ class ProviderChain:
     Multi-tier provider chain with fallback logic.
     
     Strategy:
-    1. Try Tier 1 provider (NGX Official)
-    2. For missing symbols, try Tier 2 (Apt Securities)
-    3. For still-missing symbols, use Tier 3 (Simulated)
+    1. Try Tier 0 provider (ngnmarket.com - primary)
+    2. Try Tier 1 provider (NGX Official - backup)
+    3. For still-missing symbols, use Tier 3 (Simulated) as last resort
     
     Caching:
-    - Tier 1 and Tier 2 results cached with configurable TTL
+    - Real data (Tier 0, 1) cached with configurable TTL
     - Tier 3 (simulated) is never cached
     
     Transparency:
     - Returns source breakdown for every fetch
     - Flags when ANY simulated data is used
+    - Tracks simulation metrics (Phase 1)
     """
     
     def __init__(
@@ -143,7 +149,7 @@ class ProviderChain:
         Initialize provider chain.
         
         Args:
-            providers: List of providers in priority order (Tier 1 first)
+            providers: List of providers in priority order (Tier 0 first)
             cache_ttl: Cache TTL in seconds
             enable_cache: Whether to enable caching
         """
@@ -151,6 +157,11 @@ class ProviderChain:
         self._providers = sorted(providers, key=lambda p: p.tier)
         self._cache = InMemoryCache(default_ttl=cache_ttl) if enable_cache else None
         self._cache_ttl = cache_ttl
+        
+        # Phase 1: Simulation tracking metrics
+        self._simulation_fallback_count: int = 0
+        self._last_simulated_at: Optional[datetime] = None
+        self._total_fetch_count: int = 0
     
     async def fetch_snapshot(
         self,
@@ -179,6 +190,7 @@ class ProviderChain:
         source_counts = {
             DataSource.NGX_OFFICIAL: 0,
             DataSource.APT_SECURITIES: 0,
+            DataSource.KWAYISI: 0,
             DataSource.SIMULATED: 0,
         }
         
@@ -256,6 +268,15 @@ class ProviderChain:
         if simulated_symbols:
             logger.warning(f"Simulated data for: {', '.join(simulated_symbols[:10])}{'...' if len(simulated_symbols) > 10 else ''}")
         
+        # Phase 1: Update simulation tracking metrics
+        self._total_fetch_count += 1
+        if simulated_symbols:
+            self._simulation_fallback_count += 1
+            self._last_simulated_at = datetime.utcnow()
+        
+        # Calculate simulation rate
+        simulation_rate = len(simulated_symbols) / len(all_snapshots) if all_snapshots else 0.0
+        
         return ChainFetchResult(
             success=len(all_snapshots) > 0,
             snapshots=all_snapshots,
@@ -265,6 +286,7 @@ class ProviderChain:
             last_updated=datetime.utcnow(),
             errors=errors,
             fetch_time_ms=fetch_time,
+            simulation_rate=simulation_rate,
         )
     
     def clear_cache(self):
@@ -283,3 +305,20 @@ class ProviderChain:
             }
             for p in self._providers
         ]
+    
+    def get_simulation_metrics(self) -> Dict[str, Any]:
+        """
+        Get simulation tracking metrics (Phase 1).
+        
+        Returns:
+            Dict with simulation_fallback_count, last_simulated_at, total_fetch_count
+        """
+        return {
+            'simulation_fallback_count': self._simulation_fallback_count,
+            'last_simulated_at': self._last_simulated_at.isoformat() if self._last_simulated_at else None,
+            'total_fetch_count': self._total_fetch_count,
+            'simulation_occurred_rate': (
+                self._simulation_fallback_count / self._total_fetch_count
+                if self._total_fetch_count > 0 else 0.0
+            ),
+        }

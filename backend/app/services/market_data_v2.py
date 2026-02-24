@@ -1,12 +1,13 @@
 """
 Market Data Service v2 for NSE Trader.
 
-Production-grade 3-tier data sourcing:
-- Tier 1: NGX Official Equities Price List
-- Tier 2: Apt Securities Daily Price List
-- Tier 3: Simulated fallback (last resort)
+Production-grade multi-tier data sourcing:
+- Tier 0: ngnmarket.com (primary live data)
+- Tier 1: NGX Official Equities Price List (backup)
+- Tier 3: Simulated fallback (last resort, clearly flagged)
 
-This replaces the TradingView-dependent implementation.
+Note: Apt Securities (Tier 2) has been disabled due to persistent 404 errors.
+See Phase 0 audit findings for details.
 """
 
 import logging
@@ -18,8 +19,10 @@ from dataclasses import dataclass, field
 from app.data.sources.ngx_stocks import NGXStockRegistry, Sector
 from app.market_data.providers import (
     ProviderChain,
+    NgnMarketProvider,
     NgxEquitiesPriceListProvider,
-    AptSecuritiesDailyPriceProvider,
+    # AptSecuritiesDailyPriceProvider,  # DISABLED: Returns 404 - Phase 0 audit
+    KwayisiNGXProvider,
     SimulatedProvider,
     PriceSnapshot,
     DataSource,
@@ -48,6 +51,7 @@ class MarketDataServiceV2:
     Features:
     - NGX Official data (Tier 1)
     - Apt Securities fallback (Tier 2)
+    - Kwayisi AFX fallback (Tier 2)
     - Simulated fallback (Tier 3 - last resort)
     - Transparent source tracking
     - Caching with TTL
@@ -68,15 +72,22 @@ class MarketDataServiceV2:
             registry_data[stock['symbol']] = stock
         
         # Initialize providers
-        self._ngx_provider = NgxEquitiesPriceListProvider()
-        self._apt_provider = AptSecuritiesDailyPriceProvider()
-        self._simulated_provider = SimulatedProvider(registry_data)
+        self._ngnmarket_provider = NgnMarketProvider()  # Primary: ngnmarket.com (Tier 0)
+        self._ngx_provider = NgxEquitiesPriceListProvider()  # Backup: NGX official (Tier 1)
+        # NOTE: AptSecuritiesDailyPriceProvider (Tier 2) DISABLED - returns 404 for all endpoints
+        # self._apt_provider = AptSecuritiesDailyPriceProvider()
+        self._kwayisi_provider = KwayisiNGXProvider()  # Secondary: Kwayisi AFX (Tier 2)
+        self._simulated_provider = SimulatedProvider(registry_data)  # Last resort (Tier 3)
         
-        # Create provider chain
+        # Create provider chain - NgnMarket first (most reliable real data)
+        # Apt Securities removed from chain due to persistent 404 errors (Phase 0 audit finding)
+        # Kwayisi added as secondary fallback
         self._provider_chain = ProviderChain(
             providers=[
+                self._ngnmarket_provider,
                 self._ngx_provider,
-                self._apt_provider,
+                # self._apt_provider,  # DISABLED: Returns 404 - see Phase 0 audit
+                self._kwayisi_provider,
                 self._simulated_provider,
             ],
             cache_ttl=cache_ttl,
@@ -193,14 +204,14 @@ class MarketDataServiceV2:
         except RuntimeError:
             return asyncio.run(self.get_stock_async(symbol))
     
-    def get_stocks_by_sector(self, sector: str) -> MarketDataResult:
-        """Get stocks filtered by sector."""
+    async def get_stocks_by_sector_async(self, sector: str) -> MarketDataResult:
+        """Get stocks filtered by sector (async)."""
         try:
             sector_enum = Sector(sector)
             registry_stocks = self.registry.get_by_sector(sector_enum)
             symbols = [s['symbol'] for s in registry_stocks]
             
-            result = asyncio.run(self._provider_chain.fetch_snapshot(symbols))
+            result = await self._provider_chain.fetch_snapshot(symbols)
             
             enriched_stocks = []
             for stock in registry_stocks:
@@ -224,13 +235,27 @@ class MarketDataServiceV2:
                 timestamp=datetime.utcnow(),
                 error=f"Invalid sector: {sector}"
             )
+
+    def get_stocks_by_sector(self, sector: str) -> MarketDataResult:
+        """Get stocks filtered by sector."""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, self.get_stocks_by_sector_async(sector))
+                    return future.result()
+            else:
+                return loop.run_until_complete(self.get_stocks_by_sector_async(sector))
+        except RuntimeError:
+            return asyncio.run(self.get_stocks_by_sector_async(sector))
     
-    def get_high_liquidity_stocks(self) -> MarketDataResult:
-        """Get only high liquidity stocks."""
+    async def get_high_liquidity_stocks_async(self) -> MarketDataResult:
+        """Get only high liquidity stocks (async)."""
         registry_stocks = self.registry.get_high_liquidity_stocks()
         symbols = [s['symbol'] for s in registry_stocks]
         
-        result = asyncio.run(self._provider_chain.fetch_snapshot(symbols))
+        result = await self._provider_chain.fetch_snapshot(symbols)
         
         enriched_stocks = []
         for stock in registry_stocks:
@@ -246,10 +271,24 @@ class MarketDataServiceV2:
             timestamp=datetime.utcnow(),
             meta=result.to_meta_dict()
         )
+
+    def get_high_liquidity_stocks(self) -> MarketDataResult:
+        """Get only high liquidity stocks."""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, self.get_high_liquidity_stocks_async())
+                    return future.result()
+            else:
+                return loop.run_until_complete(self.get_high_liquidity_stocks_async())
+        except RuntimeError:
+            return asyncio.run(self.get_high_liquidity_stocks_async())
     
-    def get_market_summary(self) -> MarketDataResult:
-        """Get overall market summary."""
-        all_stocks_result = self.get_all_stocks()
+    async def get_market_summary_async(self) -> MarketDataResult:
+        """Get overall market summary (async)."""
+        all_stocks_result = await self.get_all_stocks_async()
         stocks = all_stocks_result.data if all_stocks_result.success else []
         
         # Calculate breadth
@@ -284,6 +323,20 @@ class MarketDataServiceV2:
             timestamp=datetime.utcnow(),
             meta=all_stocks_result.meta
         )
+
+    def get_market_summary(self) -> MarketDataResult:
+        """Get overall market summary."""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, self.get_market_summary_async())
+                    return future.result()
+            else:
+                return loop.run_until_complete(self.get_market_summary_async())
+        except RuntimeError:
+            return asyncio.run(self.get_market_summary_async())
     
     def search_stocks(self, query: str) -> MarketDataResult:
         """Search stocks by symbol or name."""
@@ -305,14 +358,14 @@ class MarketDataServiceV2:
             timestamp=datetime.utcnow()
         )
     
-    def get_technical_indicators(self, symbol: str) -> MarketDataResult:
+    async def get_technical_indicators_async(self, symbol: str) -> MarketDataResult:
         """
-        Get technical indicators for a stock.
+        Get technical indicators for a stock (async).
         
         Note: Without TradingView, we compute basic indicators locally.
         """
         # For now, return basic data - full indicators would require historical data
-        result = self.get_stock(symbol)
+        result = await self.get_stock_async(symbol)
         if not result.success:
             return result
         
@@ -336,6 +389,22 @@ class MarketDataServiceV2:
             timestamp=datetime.utcnow(),
             meta=result.meta
         )
+
+    def get_technical_indicators(self, symbol: str) -> MarketDataResult:
+        """
+        Get technical indicators for a stock.
+        """
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, self.get_technical_indicators_async(symbol))
+                    return future.result()
+            else:
+                return loop.run_until_complete(self.get_technical_indicators_async(symbol))
+        except RuntimeError:
+            return asyncio.run(self.get_technical_indicators_async(symbol))
     
     def get_provider_status(self) -> List[Dict[str, Any]]:
         """Get status of all data providers."""
@@ -381,6 +450,8 @@ class MarketDataServiceV2:
             return "ngx_official"
         elif breakdown.apt_securities > 0:
             return "apt_securities"
+        elif breakdown.kwayisi > 0:
+            return "kwayisi"
         elif breakdown.simulated > 0:
             return "simulated"
         return "unknown"

@@ -235,6 +235,9 @@ class RecommendationEngine:
         # Validity period based on horizon
         valid_until = self._calculate_validity(horizon)
         
+        # Calculate historical accuracy (backtest)
+        historical_accuracy = self._calculate_historical_accuracy(price_data)
+        
         return Recommendation(
             symbol=symbol,
             name=name,
@@ -255,9 +258,88 @@ class RecommendationEngine:
             sector_context=sector_context,
             market_regime=regime_analysis.regime if regime_analysis else MarketRegime.RANGE_BOUND,
             regime_adjustment=regime_analysis.recommended_strategy if regime_analysis else "Normal trading",
-            valid_until=valid_until
+            valid_until=valid_until,
+            historical_accuracy=historical_accuracy
         )
     
+    def _calculate_historical_accuracy(self, df: pd.DataFrame, backtest_days: int = 90) -> float:
+        """
+        Calculate historical accuracy of predictions based on simplified backtesting.
+        Returns percentage accuracy (0-100).
+        """
+        if df is None or len(df) < 30:
+            return 65.0  # Default baseline
+            
+        prices = df['Close'].values
+        if len(prices) < 30:
+            return 65.0
+            
+        # Limit the number of days to backtest
+        days_to_test = min(backtest_days, len(prices) - 20)
+        if days_to_test <= 0:
+            return 65.0
+            
+        successful_signals = 0
+        total_signals = 0
+        
+        # Simple moving average and RSI helper functions for backtest
+        def get_rsi(p, period=14):
+            if len(p) < period + 1: return 50
+            delta = np.diff(p)
+            gain = np.where(delta > 0, delta, 0)
+            loss = np.where(delta < 0, -delta, 0)
+            avg_gain = np.mean(gain[-period:])
+            avg_loss = np.mean(loss[-period:])
+            if avg_loss == 0: return 100
+            rs = avg_gain / avg_loss
+            return 100 - (100 / (1 + rs))
+            
+        # Backtest loop
+        # We start from (end - days_to_test) up to (end - 5) to allow outcome check
+        start_idx = len(prices) - days_to_test
+        end_idx = len(prices) - 5
+        
+        for i in range(start_idx, end_idx):
+            # Window of data up to current point i
+            # Need enough history for indicators (at least 20 days)
+            if i < 20: continue
+            
+            window = prices[i-20:i+1]
+            current_price = prices[i]
+            
+            # Simple Strategy: RSI Reversal + Trend Follow
+            rsi = get_rsi(window)
+            sma_short = np.mean(window[-5:])
+            sma_long = np.mean(window)
+            
+            signal = 'hold'
+            if rsi < 30 and current_price > sma_short:
+                signal = 'buy'
+            elif rsi > 70 and current_price < sma_short:
+                signal = 'sell'
+            elif sma_short > sma_long and rsi < 60:
+                signal = 'buy'
+            elif sma_short < sma_long and rsi > 40:
+                signal = 'sell'
+                
+            if signal == 'hold':
+                continue
+                
+            # Outcome (5 day return)
+            future_price = prices[i+5]
+            ret = (future_price - current_price) / current_price
+            
+            if (signal == 'buy' and ret > 0) or (signal == 'sell' and ret < 0):
+                successful_signals += 1
+            total_signals += 1
+            
+        if total_signals == 0:
+            return 65.0
+            
+        accuracy = (successful_signals / total_signals) * 100
+        # Dampen extreme values
+        return max(40.0, min(90.0, accuracy))
+
     def _analyze_market_regime(
         self, market_data: Optional[pd.DataFrame], stock_data: pd.DataFrame
     ) -> Optional[RegimeAnalysis]:

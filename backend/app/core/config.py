@@ -1,61 +1,71 @@
 import os
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 from dotenv import load_dotenv
 from functools import lru_cache
 
 # Load .env file variables
 load_dotenv()
 
+
 class Settings(BaseSettings):
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",  # tolerate stale env vars from old .env files
+    )
+
     PROJECT_NAME: str = "NSE Trader API"
     API_V1_STR: str = "/api/v1"
 
-    # Redis Configuration
-    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
-    REDIS_PORT: int = int(os.getenv("REDIS_PORT", 6379))
-    REDIS_DB: int = int(os.getenv("REDIS_DB", 0))
-    REDIS_PASSWORD: str | None = os.getenv("REDIS_PASSWORD")
-    REDIS_URL: str | None = None # Construct if needed, e.g., redis://:[password]@[host]:[port]/[db]
-    CACHE_TTL_SECONDS: int = 300 # 5 minutes
+    # Database
+    DATABASE_URL: str = os.getenv(
+        "DATABASE_URL",
+        "postgresql+asyncpg://nse_trader:nse_trader@localhost:5432/nse_trader",
+    )
+    DATABASE_URL_SYNC: str = os.getenv(
+        "DATABASE_URL_SYNC",
+        "postgresql+psycopg2://nse_trader:nse_trader@localhost:5432/nse_trader",
+    )
 
-    # RabbitMQ Configuration
-    RABBITMQ_HOST: str = os.getenv("RABBITMQ_HOST", "localhost")
-    RABBITMQ_PORT: int = int(os.getenv("RABBITMQ_PORT", 5672))
-    RABBITMQ_USER: str | None = os.getenv("RABBITMQ_USER")
-    RABBITMQ_PASSWORD: str | None = os.getenv("RABBITMQ_PASSWORD")
-    RABBITMQ_VHOST: str = os.getenv("RABBITMQ_VHOST", "/")
-    CELERY_BROKER_URL: str | None = None # Construct: amqp://user:pass@host:port/vhost
+    # Cache TTL
+    CACHE_TTL_SECONDS: int = 300  # 5 minutes
 
-    # External APIs (Placeholders - use secure secret management in production)
-    NGX_API_BASE_URL: str = "http://localhost:8001/ngx-sim" # Example simulator URL
-    TRADINGVIEW_API_KEY: str | None = os.getenv("TRADINGVIEW_API_KEY") # Example
+    # Historical data
+    MIN_OHLCV_SESSIONS: int = 60  # Minimum sessions required for indicators
+    MIN_ASI_SESSIONS: int = 60  # Minimum ASI sessions for regime engine
+    OHLCV_STALENESS_DAYS: int = 5  # Data older than N trading days is stale
 
-    # Celery Worker Settings
-    CELERY_RESULT_BACKEND: str | None = None # Construct from Redis settings if using Redis as backend
+    # Centralized HTTP client
+    HTTP_TIMEOUT_SECONDS: float = 10.0
+    HTTP_MAX_RETRIES: int = 3
+    HTTP_BACKOFF_BASE: float = 0.5  # base seconds for exponential backoff
+    HTTP_BACKOFF_MAX: float = 30.0  # max backoff cap
+    HTTP_USER_AGENT: str = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    )
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = True
+    # NGX Official List PDF
+    NGX_PDF_CACHE_DIR: str = "data/ngx_pdfs"  # Local cache for downloaded PDFs
+    NGX_PDF_URL_TEMPLATE: str = (
+        "https://doclib.ngxgroup.com/DownloadsContent/"
+        "Daily%20Official%20List%20-%20Equities%20for%20{dd}-{mm}-{yyyy}.pdf"
+    )
+
+    # ── Security (Beta Hardening) ──────────────────────────────────────
+    API_KEY_HEADER: str = "X-API-Key"
+    # Comma-separated list of allowed origins for CORS
+    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:3002,http://127.0.0.1:3000,http://127.0.0.1:3002"
+    # Rate limiting (requests per minute)
+    RATE_LIMIT_DEFAULT: str = "120/minute"
+    RATE_LIMIT_HEAVY: str = "30/minute"       # /recommendations, /scanner
+    RATE_LIMIT_WRITE: str = "20/minute"        # POST endpoints
+
 
 @lru_cache()
 def get_settings() -> Settings:
-    settings = Settings()
-    # Construct URLs if needed
-    if not settings.REDIS_URL:
-         password = f":{settings.REDIS_PASSWORD}" if settings.REDIS_PASSWORD else ""
-         settings.REDIS_URL = f"redis://{password}@{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
+    return Settings()
 
-    if not settings.CELERY_BROKER_URL:
-        user_pass = f"{settings.RABBITMQ_USER}:{settings.RABBITMQ_PASSWORD}@" if settings.RABBITMQ_USER and settings.RABBITMQ_PASSWORD else ""
-        settings.CELERY_BROKER_URL = f"amqp://{user_pass}{settings.RABBITMQ_HOST}:{settings.RABBITMQ_PORT}{settings.RABBITMQ_VHOST}"
-
-    # Use Redis as the result backend by default
-    if not settings.CELERY_RESULT_BACKEND:
-        settings.CELERY_RESULT_BACKEND = settings.REDIS_URL
-
-    return settings
 
 settings = get_settings()
-
-# Example usage: print(settings.REDIS_HOST)

@@ -25,6 +25,7 @@ import {
   type Recommendation, 
   type MarketRegime 
 } from '../core';
+import { useProgressiveData } from '../core/hooks/useProgressiveData';
 
 type TimeHorizon = 'short_term' | 'swing' | 'long_term';
 
@@ -38,14 +39,18 @@ interface MarketSummary {
 }
 
 const Dashboard: React.FC = () => {
-  // State
+  // Progressive data loading (3-layer pattern)
+  // Layer 1: pulse (instant), Layer 2: summary (fast), Layer 3: stocks (full)
+  const { pulse, summary } = useProgressiveData();
+  
+  // Additional state for full data (Layer 3)
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [marketRegime, setMarketRegime] = useState<MarketRegime | null>(null);
   const [marketSummary, setMarketSummary] = useState<MarketSummary | null>(null);
   const [selectedHorizon, setSelectedHorizon] = useState<TimeHorizon>('swing');
   
-  // Loading states
+  // Loading states (Layer 3 only - Layers 1&2 use progressive hooks)
   const [loadingStocks, setLoadingStocks] = useState(true);
   const [loadingRecommendations, setLoadingRecommendations] = useState(true);
   const [loadingRegime, setLoadingRegime] = useState(true);
@@ -55,6 +60,39 @@ const Dashboard: React.FC = () => {
   
   // Last updated timestamp
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  
+  // Sync progressive data with local state for compatibility
+  useEffect(() => {
+    if (summary.data && summary.data.breadth) {
+      const b = summary.data.breadth;
+      const asiValue = (pulse.data?.market as { asi?: number })?.asi || 0;
+      const asiPct = pulse.data?.market?.asi_change_pct || 0;
+      
+      setMarketSummary({
+        asi: { value: asiValue, change: 0, change_percent: asiPct },
+        breadth: {
+          advancing: b.advancing,
+          declining: b.declining,
+          unchanged: b.unchanged,
+          ratio: b.ratio,
+        },
+        volume: { total_volume: 0, total_value: 0 },
+        sectors: [],
+        stock_count: b.total,
+        timestamp: summary.data.timestamp,
+      });
+    }
+  }, [summary.data, pulse.data]);
+  
+  // Sync regime from pulse (fast first paint)
+  useEffect(() => {
+    if (pulse.data?.market?.regime && pulse.data.market.regime !== 'unknown') {
+      // Only update if we don't have a regime yet (avoid overwriting detailed regime)
+      if (!marketRegime) {
+        setLoadingRegime(false);
+      }
+    }
+  }, [pulse.data, marketRegime]);
 
   // Fetch stocks
   const fetchStocks = useCallback(async () => {
@@ -102,36 +140,80 @@ const Dashboard: React.FC = () => {
     }
   }, []);
 
-  // Calculate market summary from stocks
-  useEffect(() => {
-    if (stocks.length > 0) {
-      const advancing = stocks.filter(s => (s.change_percent || 0) > 0).length;
-      const declining = stocks.filter(s => (s.change_percent || 0) < 0).length;
-      const unchanged = stocks.length - advancing - declining;
-      const totalVolume = stocks.reduce((sum, s) => sum + (s.volume || 0), 0);
+  // Fetch REAL market data from API (ASI, Volume, Breadth)
+  const fetchMarketSnapshot = useCallback(async () => {
+    try {
+      // Fetch snapshot for ASI and volume
+      const snapshotRes = await fetch('/api/v1/market/snapshot');
+      const snapshotData = await snapshotRes.json();
       
-      setMarketSummary({
-        asi: {
-          value: 97500, // Placeholder - would come from API
-          change: 150,
-          change_percent: 0.15,
-        },
-        breadth: {
-          advancing,
-          declining,
-          unchanged,
-          ratio: declining > 0 ? advancing / declining : advancing,
-        },
-        volume: {
-          total_volume: totalVolume,
-          total_value: totalVolume * 50, // Rough estimate
-        },
-        sectors: [],
-        stock_count: stocks.length,
-        timestamp: new Date().toISOString(),
-      });
+      // Fetch breadth data
+      const breadthRes = await fetch('/api/v1/market/breadth');
+      const breadthData = await breadthRes.json();
+      
+      if (snapshotData.success && snapshotData.data) {
+        const s = snapshotData.data;
+        const b = breadthData.success ? breadthData.data : null;
+        
+        // Safety check: ASI should be > 100,000 for NGX
+        if (s.asi < 100000 && s.asi > 0) {
+          console.warn('[Dashboard] ASI value suspiciously low:', s.asi);
+        }
+        
+        setMarketSummary({
+          asi: {
+            value: s.asi || 0,
+            change: s.asi_change || 0,
+            change_percent: s.asi_change_percent || 0,
+          },
+          breadth: {
+            advancing: b?.advancing || 0,
+            declining: b?.declining || 0,
+            unchanged: b?.unchanged || 0,
+            ratio: b?.ratio || 0,
+          },
+          volume: {
+            total_volume: s.volume || 0,
+            total_value: s.value_traded || 0,
+          },
+          sectors: [],
+          stock_count: stocks.length,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (err) {
+      console.error('Failed to fetch market snapshot:', err);
+      // Fallback to stock-based calculation if API fails
+      if (stocks.length > 0) {
+        const advancing = stocks.filter(s => (s.change_percent || 0) > 0).length;
+        const declining = stocks.filter(s => (s.change_percent || 0) < 0).length;
+        const unchanged = stocks.length - advancing - declining;
+        const totalVolume = stocks.reduce((sum, s) => sum + (s.volume || 0), 0);
+        
+        setMarketSummary({
+          asi: { value: 0, change: 0, change_percent: 0 },
+          breadth: {
+            advancing,
+            declining,
+            unchanged,
+            ratio: declining > 0 ? advancing / declining : advancing,
+          },
+          volume: {
+            total_volume: totalVolume,
+            total_value: totalVolume * 50,
+          },
+          sectors: [],
+          stock_count: stocks.length,
+          timestamp: new Date().toISOString(),
+        });
+      }
     }
-  }, [stocks]);
+  }, [stocks.length]);
+
+  // Fetch market snapshot on mount
+  useEffect(() => {
+    fetchMarketSnapshot();
+  }, [fetchMarketSnapshot]);
 
   // Initial data fetch
   useEffect(() => {
