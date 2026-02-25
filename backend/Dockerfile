@@ -36,6 +36,10 @@ COPY ./app ./app
 COPY fetch_real_ohlcv.py .
 COPY run_backtest.py .
 
+# Copy Alembic migrations
+COPY alembic.ini .
+COPY alembic ./alembic
+
 # Create data directory (will be overridden by volume mount)
 RUN mkdir -p /app/data && chown -R appuser:appuser /app
 
