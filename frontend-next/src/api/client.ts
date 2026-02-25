@@ -24,6 +24,8 @@ import type {
   TransactionList,
 } from "./types";
 
+import { emitToast } from "./toast-bridge";
+
 const BASE = "/api/v1";
 
 async function fetchJSON<T>(url: string, timeoutMs = 60_000): Promise<T> {
@@ -33,9 +35,22 @@ async function fetchJSON<T>(url: string, timeoutMs = 60_000): Promise<T> {
     const res = await fetch(url, { signal: controller.signal });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      throw new Error(`API ${res.status}: ${body}`);
+      const msg = body
+        ? `API ${res.status}: ${body.slice(0, 200)}`
+        : `API request failed (${res.status})`;
+      emitToast(msg, "error");
+      throw new Error(msg);
     }
     return res.json() as Promise<T>;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      emitToast("Request timed out — server may be unavailable", "warning");
+      throw new Error("Request timed out");
+    }
+    if (err instanceof TypeError && err.message.includes("fetch")) {
+      emitToast("Network error — cannot reach server", "error");
+    }
+    throw err;
   } finally {
     clearTimeout(timer);
   }
