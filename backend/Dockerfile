@@ -35,6 +35,7 @@ COPY ./app ./app
 # Copy top-level scripts needed by background tasks
 COPY fetch_real_ohlcv.py .
 COPY run_backtest.py .
+COPY scheduler.py .
 
 # Copy Alembic migrations
 COPY alembic.ini .

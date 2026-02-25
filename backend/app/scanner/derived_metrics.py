@@ -138,6 +138,11 @@ def compute_derived_metrics(
     capex = latest.get("capex")
     cash = latest.get("cash")
 
+    # For financial institutions (banks/insurers) operating_profit is often
+    # unavailable. Fall back to net_income as an operating-profit proxy so
+    # these stocks still get an op_margin score.
+    effective_op_profit = op_profit if op_profit is not None else net_income
+
     # ROE
     result.roe = _safe_div(net_income, equity)
 
@@ -145,10 +150,10 @@ def compute_derived_metrics(
     invested = None
     if equity is not None and debt is not None:
         invested = equity + debt
-    result.roic_proxy = _safe_div(op_profit, invested)
+    result.roic_proxy = _safe_div(effective_op_profit, invested)
 
-    # Operating margin
-    result.op_margin = _safe_div(op_profit, revenue)
+    # Operating margin (uses net_income fallback for banks)
+    result.op_margin = _safe_div(effective_op_profit, revenue)
 
     # Net margin
     result.net_margin = _safe_div(net_income, revenue)
@@ -191,12 +196,15 @@ def compute_derived_metrics(
         result.earnings_stability = max(0.0, min(1.0, 1.0 - cov_ni))
 
     # Margin stability = 1 - CoV(operating_margin)
+    # Falls back to net_income / revenue for banks where operating_profit is null
     margin_values = []
     for p in sorted_periods:
         rev = p.get("revenue")
         op = p.get("operating_profit")
-        if rev and op and rev != 0:
-            margin_values.append(op / rev)
+        ni = p.get("net_income")
+        eff_op = op if op is not None else ni
+        if rev and eff_op and rev != 0:
+            margin_values.append(eff_op / rev)
     cov_margin = _coefficient_of_variation(margin_values)
     if cov_margin is not None:
         result.margin_stability = max(0.0, min(1.0, 1.0 - cov_margin))

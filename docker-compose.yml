@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # ── PostgreSQL (audit trail, portfolios) ──────────────────────────
   postgres:
@@ -60,6 +58,26 @@ services:
       - BACKEND_URL=http://backend:8000
     depends_on:
       - backend
+    networks:
+      - nse_net
+
+  # ── Scheduler (cron for daily/weekly scans) ───────────────────────
+  scheduler:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nse_trader_scheduler
+    restart: unless-stopped
+    entrypoint: ["python", "scheduler.py"]
+    volumes:
+      - ./backend/data:/app/data
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://nse_trader:nse_trader@postgres:5432/nse_trader
+      - DATABASE_URL_SYNC=postgresql+psycopg2://nse_trader:nse_trader@postgres:5432/nse_trader
+      - ENV=dev
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - nse_net
 

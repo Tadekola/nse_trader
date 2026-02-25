@@ -471,10 +471,55 @@ async def main():
             f.write(csv_content)
 
         lines = csv_content.strip().split("\n")
-        print(f"SUCCESS: {len(lines)-1} rows written to {csv_path}")
-        print(f"Symbols scraped: {len(SYMBOLS) - len(failed)}/{len(SYMBOLS)}")
+        row_count = len(lines) - 1
+        symbols_ok = len(SYMBOLS) - len(failed)
+        print(f"SUCCESS: {row_count} rows written to {csv_path}")
+        print(f"Symbols scraped: {symbols_ok}/{len(SYMBOLS)}")
         if failed:
             print(f"Failed: {', '.join(failed)}")
+
+        # ── Validation checks ──────────────────────────────────────────
+        warnings = []
+
+        # 1. Minimum row count (expect ~3 periods per symbol)
+        expected_min = symbols_ok * 2
+        if row_count < expected_min:
+            warnings.append(f"LOW ROW COUNT: {row_count} rows < expected minimum {expected_min}")
+
+        # 2. Check required fields populated
+        symbols_with_revenue = set()
+        symbols_with_net_income = set()
+        for p in all_periods:
+            if p.get("revenue") is not None:
+                symbols_with_revenue.add(p["symbol"])
+            if p.get("net_income") is not None:
+                symbols_with_net_income.add(p["symbol"])
+        scraped_symbols = set(p["symbol"] for p in all_periods)
+        missing_rev = scraped_symbols - symbols_with_revenue
+        missing_ni = scraped_symbols - symbols_with_net_income
+        if missing_rev:
+            warnings.append(f"MISSING REVENUE for: {', '.join(sorted(missing_rev))}")
+        if missing_ni:
+            warnings.append(f"MISSING NET_INCOME for: {', '.join(sorted(missing_ni))}")
+
+        # 3. Sanity: no negative revenue
+        neg_rev = [p["symbol"] for p in all_periods
+                   if p.get("revenue") is not None and p["revenue"] < 0]
+        if neg_rev:
+            warnings.append(f"NEGATIVE REVENUE found for: {', '.join(sorted(set(neg_rev)))}")
+
+        # 4. Failure rate
+        fail_pct = len(failed) / len(SYMBOLS) * 100
+        if fail_pct > 20:
+            warnings.append(f"HIGH FAILURE RATE: {fail_pct:.0f}% of symbols failed")
+
+        if warnings:
+            print(f"\n⚠ VALIDATION WARNINGS ({len(warnings)}):")
+            for w in warnings:
+                print(f"  - {w}")
+        else:
+            print("\n✓ All validation checks passed")
+
         print(f"\nImport with:")
         print(f"  python -m app.cli.fundamentals import-csv --csv {csv_path} --source stockanalysis_2025")
     else:
