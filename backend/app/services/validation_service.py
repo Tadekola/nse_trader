@@ -14,7 +14,7 @@ Design:
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 
 from app.market_data.providers.base import PriceSnapshot, FetchResult
@@ -250,7 +250,7 @@ class ValidationService:
         
         # Cache result
         self._last_result = result
-        self._last_fetch_time = datetime.utcnow()
+        self._last_fetch_time = datetime.now(timezone.utc)
         
         # Log summary
         logger.info(

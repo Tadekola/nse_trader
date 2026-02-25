@@ -21,7 +21,7 @@ import logging
 import sys
 import os
 from collections import Counter
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 
 # Ensure backend is importable
@@ -195,7 +195,7 @@ def generate_coverage_report(symbols: List[str]) -> Dict[str, Any]:
     """
     storage = get_historical_storage()
     report: Dict[str, Any] = {
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "symbols": {},
         "summary": {},
     }
@@ -286,7 +286,7 @@ def generate_verification_report(
     lines = [
         "=" * 70,
         "  BACKFILL VERIFICATION REPORT",
-        f"  Generated: {datetime.utcnow().isoformat()}",
+        f"  Generated: {datetime.now(timezone.utc).isoformat()}",
         f"  Source: {source}",
         f"  Minimum sessions required: {min_sessions}",
         "=" * 70,

@@ -13,7 +13,7 @@ import logging
 import asyncio
 import re
 import json
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 
@@ -149,7 +149,7 @@ class HistoricalIngestionService:
             # Get updated metadata
             metadata = self._storage.get_metadata(symbol)
             
-            self._last_ingestion[symbol] = datetime.utcnow()
+            self._last_ingestion[symbol] = datetime.now(timezone.utc)
             
             return IngestionResult(
                 symbol=symbol,

@@ -10,7 +10,7 @@ These tests verify:
 """
 import pytest
 import tempfile
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from app.services.trust_status import (
@@ -116,7 +116,7 @@ class TestDataIntegrityLevel:
             symbols_ready_for_trading=10,
             total_historical_sessions=600,
             last_successful_ingestion=date.today(),
-            status_computed_at=datetime.utcnow(),
+            status_computed_at=datetime.now(timezone.utc),
         )
         
         assert status.data_integrity == DataIntegrityLevel.HIGH
@@ -192,7 +192,7 @@ class TestBannerMessages:
             symbols_ready_for_trading=10,
             total_historical_sessions=600,
             last_successful_ingestion=date.today(),
-            status_computed_at=datetime.utcnow(),
+            status_computed_at=datetime.now(timezone.utc),
         )
         
         banner = status.get_banner_message()
@@ -211,7 +211,7 @@ class TestBannerMessages:
             symbols_ready_for_trading=0,
             total_historical_sessions=100,
             last_successful_ingestion=date.today(),
-            status_computed_at=datetime.utcnow(),
+            status_computed_at=datetime.now(timezone.utc),
         )
         
         banner = status.get_banner_message()
@@ -229,7 +229,7 @@ class TestBannerMessages:
             symbols_ready_for_trading=0,
             total_historical_sessions=0,
             last_successful_ingestion=None,
-            status_computed_at=datetime.utcnow(),
+            status_computed_at=datetime.now(timezone.utc),
         )
         
         banner = status.get_banner_message()
@@ -251,7 +251,7 @@ class TestTrustStatusToDict:
             symbols_ready_for_trading=8,
             total_historical_sessions=600,
             last_successful_ingestion=date.today(),
-            status_computed_at=datetime.utcnow(),
+            status_computed_at=datetime.now(timezone.utc),
             notes=["Test note"],
             subsystem_status={"test": "OK"},
         )
@@ -277,7 +277,7 @@ class TestTrustStatusToDict:
             symbols_ready_for_trading=0,
             total_historical_sessions=0,
             last_successful_ingestion=None,
-            status_computed_at=datetime.utcnow(),
+            status_computed_at=datetime.now(timezone.utc),
         )
         
         result = status.to_dict()
@@ -299,7 +299,7 @@ class TestIntegrityExplanation:
             symbols_ready_for_trading=10,
             total_historical_sessions=600,
             last_successful_ingestion=date.today(),
-            status_computed_at=datetime.utcnow(),
+            status_computed_at=datetime.now(timezone.utc),
         )
         
         explanation = status.get_integrity_explanation()
@@ -318,7 +318,7 @@ class TestIntegrityExplanation:
             symbols_ready_for_trading=0,
             total_historical_sessions=0,
             last_successful_ingestion=None,
-            status_computed_at=datetime.utcnow(),
+            status_computed_at=datetime.now(timezone.utc),
         )
         
         explanation = status.get_integrity_explanation()

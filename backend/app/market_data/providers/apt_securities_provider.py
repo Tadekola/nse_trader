@@ -8,7 +8,7 @@ Source: https://aptsecurities.com/ngx-daily-price-list/
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 import re
 
@@ -141,7 +141,7 @@ class AptSecuritiesDailyPriceProvider(MarketDataProvider):
                 else:
                     symbols_missing.append(symbol)
             
-            self._last_fetch = datetime.utcnow()
+            self._last_fetch = datetime.now(timezone.utc)
             
             return FetchResult(
                 success=True,
@@ -307,7 +307,7 @@ class AptSecuritiesDailyPriceProvider(MarketDataProvider):
                 change_percent=NumericParser.parse_percent(get_cell_value('change_percent'), 0.0),
                 volume=NumericParser.parse_volume(get_cell_value('volume')),
                 value=NumericParser.parse_value(get_cell_value('value')),
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 source=DataSource.APT_SECURITIES,
             )
             

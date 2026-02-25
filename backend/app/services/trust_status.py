@@ -16,7 +16,7 @@ Key Principles:
 import logging
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -399,7 +399,7 @@ class TrustStatusService:
             symbols_ready_for_trading=symbols_ready,
             total_historical_sessions=total_sessions,
             last_successful_ingestion=last_ingestion,
-            status_computed_at=datetime.utcnow(),
+            status_computed_at=datetime.now(timezone.utc),
             validation_sources_count=validation_sources_count,
             validation_active=validation_active,
             validation_agreement_rate=validation_agreement_rate,

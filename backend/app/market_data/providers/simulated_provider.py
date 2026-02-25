@@ -11,7 +11,7 @@ Data is clearly marked as simulated to warn users.
 import logging
 import hashlib
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from .base import (
@@ -126,7 +126,7 @@ class SimulatedProvider(MarketDataProvider):
         # Use symbol hash for consistent "random" values per stock
         seed = int(hashlib.md5(symbol.encode()).hexdigest()[:8], 16)
         # Changes hourly to simulate market movement
-        random.seed(seed + datetime.utcnow().hour + datetime.utcnow().day * 24)
+        random.seed(seed + datetime.now(timezone.utc).hour + datetime.now(timezone.utc).day * 24)
         
         # Calculate base price from market cap
         market_cap = registry_info.get('market_cap_billions', 100) * 1e9
@@ -175,7 +175,7 @@ class SimulatedProvider(MarketDataProvider):
             change_percent=change_percent,
             volume=volume,
             value=value,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             source=DataSource.SIMULATED,
             previous_close=open_price,
             # Simulation disclosure - REQUIRED for transparency

@@ -11,7 +11,7 @@ Produces comprehensive, explainable recommendations that consider:
 """
 from typing import Optional, List, Dict, Tuple, Any
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 import pandas as pd
 import numpy as np
@@ -102,7 +102,7 @@ class Recommendation:
     raw_score: float = 0.0       # pre-adjustment composite score
     
     # Metadata
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     valid_until: Optional[datetime] = None
     historical_accuracy: Optional[float] = None
 
@@ -727,7 +727,7 @@ class RecommendationEngine:
     
     def _calculate_validity(self, horizon: TimeHorizon) -> datetime:
         """Calculate when recommendation expires."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         if horizon == TimeHorizon.SHORT_TERM:
             return now + timedelta(days=1)

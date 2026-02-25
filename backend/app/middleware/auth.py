@@ -15,7 +15,7 @@ import hashlib
 import logging
 import os
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import Depends, HTTPException, Security
@@ -88,7 +88,7 @@ async def require_api_key(
         await session.execute(
             update(ApiKey)
             .where(ApiKey.id == db_key.id)
-            .values(last_used_at=datetime.utcnow())
+            .values(last_used_at=datetime.now(timezone.utc))
         )
         await session.commit()
     except Exception:

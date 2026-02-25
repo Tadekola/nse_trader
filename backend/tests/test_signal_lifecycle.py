@@ -9,7 +9,7 @@ Tests cover:
 - Human-readable explanations
 """
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import sys
 import os
@@ -98,7 +98,7 @@ class TestTTLCalculation:
     
     def test_short_term_ttl(self, manager):
         """Test short-term signals get 8-hour TTL."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         expires = manager.calculate_expiry("short_term", now)
         
         expected = now + timedelta(hours=8)
@@ -106,7 +106,7 @@ class TestTTLCalculation:
     
     def test_swing_ttl(self, manager):
         """Test swing signals get 72-hour TTL."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         expires = manager.calculate_expiry("swing", now)
         
         expected = now + timedelta(hours=72)
@@ -114,7 +114,7 @@ class TestTTLCalculation:
     
     def test_long_term_ttl(self, manager):
         """Test long-term signals get 168-hour (7-day) TTL."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         expires = manager.calculate_expiry("long_term", now)
         
         expected = now + timedelta(hours=168)
@@ -122,7 +122,7 @@ class TestTTLCalculation:
     
     def test_unknown_horizon_uses_default(self, manager):
         """Test unknown horizon uses default TTL."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         expires = manager.calculate_expiry("unknown_horizon", now)
         
         expected = now + timedelta(hours=24)
@@ -130,12 +130,12 @@ class TestTTLCalculation:
     
     def test_is_expired_false_for_future(self, manager):
         """Test is_expired returns False for future expiry."""
-        future = datetime.utcnow() + timedelta(hours=1)
+        future = datetime.now(timezone.utc) + timedelta(hours=1)
         assert manager.is_expired(future) == False
     
     def test_is_expired_true_for_past(self, manager):
         """Test is_expired returns True for past expiry."""
-        past = datetime.utcnow() - timedelta(hours=1)
+        past = datetime.now(timezone.utc) - timedelta(hours=1)
         assert manager.is_expired(past) == True
 
 
@@ -243,7 +243,7 @@ class TestNoTradeDecision:
         """Test that to_dict includes all required fields."""
         decision = NoTradeDecision(
             symbol="DANGCEM",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             reasons=[NoTradeReason.LOW_DATA_CONFIDENCE],
             primary_reason=NoTradeReason.LOW_DATA_CONFIDENCE,
             human_readable="NO_TRADE for DANGCEM: Low data confidence",
@@ -271,7 +271,7 @@ class TestNoTradeDecision:
         """Test that human_readable explanation is clear."""
         decision = NoTradeDecision(
             symbol="DANGCEM",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             reasons=[NoTradeReason.LOW_DATA_CONFIDENCE],
             primary_reason=NoTradeReason.LOW_DATA_CONFIDENCE,
             human_readable="NO_TRADE for DANGCEM: Data confidence (50%) is below threshold (70%)"
@@ -358,7 +358,7 @@ class TestSignalValidation:
     
     def test_validate_active_not_expired(self, manager):
         """Test that active, non-expired signal is valid."""
-        future = datetime.utcnow() + timedelta(hours=1)
+        future = datetime.now(timezone.utc) + timedelta(hours=1)
         state, is_valid = manager.validate_signal_state("active", future)
         
         assert state == SignalState.ACTIVE
@@ -366,7 +366,7 @@ class TestSignalValidation:
     
     def test_validate_expired_signal(self, manager):
         """Test that expired signal is INVALID."""
-        past = datetime.utcnow() - timedelta(hours=1)
+        past = datetime.now(timezone.utc) - timedelta(hours=1)
         state, is_valid = manager.validate_signal_state("active", past)
         
         assert state == SignalState.INVALID
@@ -374,7 +374,7 @@ class TestSignalValidation:
     
     def test_validate_suppressed_signal(self, manager):
         """Test that suppressed signal stays suppressed and invalid."""
-        future = datetime.utcnow() + timedelta(hours=1)
+        future = datetime.now(timezone.utc) + timedelta(hours=1)
         state, is_valid = manager.validate_signal_state("suppressed", future)
         
         assert state == SignalState.SUPPRESSED
@@ -382,7 +382,7 @@ class TestSignalValidation:
     
     def test_validate_no_trade_signal(self, manager):
         """Test that NO_TRADE signal stays NO_TRADE and invalid."""
-        future = datetime.utcnow() + timedelta(hours=1)
+        future = datetime.now(timezone.utc) + timedelta(hours=1)
         state, is_valid = manager.validate_signal_state("no_trade", future)
         
         assert state == SignalState.NO_TRADE
@@ -390,7 +390,7 @@ class TestSignalValidation:
     
     def test_validate_invalid_state_string(self, manager):
         """Test that invalid state string returns INVALID."""
-        future = datetime.utcnow() + timedelta(hours=1)
+        future = datetime.now(timezone.utc) + timedelta(hours=1)
         state, is_valid = manager.validate_signal_state("unknown_state", future)
         
         assert state == SignalState.INVALID
@@ -404,7 +404,7 @@ class TestLifecycleResult:
         """Test ACTIVE result serialization."""
         result = SignalLifecycleResult(
             state=SignalState.ACTIVE,
-            expires_at=datetime.utcnow() + timedelta(hours=24),
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
             is_valid=True,
             reasoning="Signal is active and valid"
         )
@@ -420,7 +420,7 @@ class TestLifecycleResult:
         """Test NO_TRADE result serialization."""
         decision = NoTradeDecision(
             symbol="DANGCEM",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             reasons=[NoTradeReason.LOW_DATA_CONFIDENCE],
             primary_reason=NoTradeReason.LOW_DATA_CONFIDENCE,
             human_readable="NO_TRADE: Low data confidence"
@@ -428,7 +428,7 @@ class TestLifecycleResult:
         
         result = SignalLifecycleResult(
             state=SignalState.NO_TRADE,
-            expires_at=datetime.utcnow() + timedelta(hours=24),
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
             is_valid=False,
             no_trade_decision=decision,
             reasoning="NO_TRADE: Low data confidence"

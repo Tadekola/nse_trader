@@ -16,7 +16,7 @@ Tables:
 - portfolio_transactions: Buy/sell/dividend/cash transactions (Milestone B)
 """
 
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import Optional, Dict, Any
 
 from sqlalchemy import (
@@ -45,7 +45,7 @@ class ApiKey(Base):
     key_hash = Column(String(64), nullable=False, unique=True, index=True)
     name = Column(String(100), nullable=False)  # human label, e.g. "dev-laptop"
     is_active = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     last_used_at = Column(DateTime, nullable=True)
     scopes = Column(String(500), nullable=True)  # comma-separated, future use
 
@@ -63,7 +63,7 @@ class OHLCVPrice(Base):
     close = Column(Float, nullable=False)
     volume = Column(BigInteger, nullable=False, default=0)
     source = Column(String(50), nullable=False, default="NGNMARKET_HISTORICAL")
-    ingested_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    ingested_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         UniqueConstraint("symbol", "ts", name="uq_ohlcv_symbol_ts"),
@@ -84,7 +84,7 @@ class MarketIndex(Base):
     close = Column(Float, nullable=False)
     volume = Column(BigInteger, nullable=True)
     source = Column(String(50), nullable=False, default="NGNMARKET_HISTORICAL")
-    ingested_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    ingested_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         UniqueConstraint("name", "ts", name="uq_market_index_name_ts"),
@@ -108,7 +108,7 @@ class Signal(Base):
     status = Column(String(20), nullable=False, default="ACTIVE")  # ACTIVE/SUPPRESSED/INVALID/NO_TRADE
     params = Column(JSONB, nullable=True)
     provenance = Column(JSONB, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     expires_at = Column(DateTime, nullable=True)
 
     __table_args__ = (
@@ -122,7 +122,7 @@ class NoTradeEvent(Base):
     __tablename__ = "no_trade_events"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    ts = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    ts = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
     scope = Column(String(20), nullable=False, default="symbol")  # symbol | market | system
     symbol = Column(String(20), nullable=True, index=True)
     reason_code = Column(String(50), nullable=False)
@@ -136,7 +136,7 @@ class AuditEvent(Base):
     __tablename__ = "audit_events"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    ts = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    ts = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
     component = Column(String(50), nullable=False, index=True)
     level = Column(String(10), nullable=False, default="INFO")  # DEBUG/INFO/WARN/ERROR
     event_type = Column(String(50), nullable=False, index=True)
@@ -159,7 +159,7 @@ class SourceHealth(Base):
     error_rate = Column(Float, nullable=False, default=0.0)
     stale_count = Column(Integer, nullable=False, default=0)
     circuit_state = Column(String(20), nullable=False, default="CLOSED")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
 class CorporateAction(Base):
@@ -189,7 +189,7 @@ class CorporateAction(Base):
     confidence = Column(String(10), nullable=False, default="HIGH")  # HIGH/MEDIUM/LOW
     notes = Column(Text, nullable=True)
     artifact_ref = Column(String(255), nullable=True)
-    ingested_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    ingested_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     provenance = Column(JSONB, nullable=True)
 
     __table_args__ = (
@@ -219,7 +219,7 @@ class AdjustedPrice(Base):
     daily_return_price = Column(Float, nullable=True)
     daily_return_total = Column(Float, nullable=True)
     tri_quality = Column(String(20), nullable=False, default="PRICE_ONLY")
-    computed_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    computed_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     provenance = Column(JSONB, nullable=True)
 
     __table_args__ = (
@@ -243,7 +243,7 @@ class FxRate(Base):
     rate = Column(Float, nullable=False)  # NGN per 1 unit of foreign currency
     source = Column(String(50), nullable=False)
     confidence = Column(String(10), nullable=False, default="HIGH")
-    ingested_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    ingested_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     provenance = Column(JSONB, nullable=True)
 
     __table_args__ = (
@@ -269,7 +269,7 @@ class MacroSeries(Base):
     frequency = Column(String(10), nullable=False, default="MONTHLY")  # DAILY/MONTHLY/QUARTERLY
     source = Column(String(50), nullable=False)
     confidence = Column(String(10), nullable=False, default="HIGH")
-    ingested_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    ingested_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     provenance = Column(JSONB, nullable=True)
 
     __table_args__ = (
@@ -291,8 +291,8 @@ class Portfolio(Base):
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
     base_currency = Column(String(5), nullable=False, default="NGN")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
 class PortfolioTransaction(Base):
@@ -319,7 +319,7 @@ class PortfolioTransaction(Base):
     amount_ngn = Column(Float, nullable=False)     # total NGN amount (positive=inflow, negative=outflow)
     fees_ngn = Column(Float, nullable=False, default=0.0)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     provenance = Column(JSONB, nullable=True)
 
     __table_args__ = (
@@ -394,7 +394,7 @@ class FundamentalsPeriodic(Base):
 
     # Provenance
     source = Column(String(50), nullable=False)
-    ingested_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    ingested_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     provenance = Column(JSONB, nullable=True)
 
     __table_args__ = (
@@ -442,7 +442,7 @@ class FundamentalsDerived(Base):
     data_freshness_days = Column(Integer, nullable=True)  # days since period_end_date
     periods_available = Column(Integer, nullable=True)    # how many periods used
 
-    computed_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    computed_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     provenance = Column(JSONB, nullable=True)
 
     __table_args__ = (
@@ -463,7 +463,7 @@ class ScanRun(Base):
     universe_name = Column(String(50), nullable=False)
     symbols_scanned = Column(Integer, nullable=False, default=0)
     symbols_ranked = Column(Integer, nullable=False, default=0)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     summary = Column(JSONB, nullable=True)                # top-level metrics
     provenance = Column(JSONB, nullable=True)
 

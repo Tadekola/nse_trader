@@ -11,7 +11,7 @@ Suppresses recommendations when data quality is insufficient.
 """
 import logging
 from typing import Optional, Dict, List, Any, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -100,7 +100,7 @@ class ConfidenceScore:
     price_variance_percent: float = 0.0
     volume_variance_percent: float = 0.0
     data_age_seconds: float = 0.0
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for API responses."""
@@ -309,7 +309,7 @@ class DataConfidenceScorer:
             "source": stock_data.get("source", "unknown"),
             "price": stock_data.get("price", 0),
             "volume": stock_data.get("volume", 0),
-            "timestamp": stock_data.get("timestamp", datetime.utcnow().isoformat())
+            "timestamp": stock_data.get("timestamp", datetime.now(timezone.utc).isoformat())
         }
         source_data.append(primary_source)
         
@@ -429,7 +429,7 @@ class DataConfidenceScorer:
         Returns:
             Tuple of (freshness_score 0.0-1.0, oldest_data_age_seconds)
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         ages = []
         
         for data in source_data:
@@ -446,6 +446,9 @@ class DataConfidenceScorer:
                     ages.append(self.config.max_data_age_minutes * 60)
                     continue
             
+            # Ensure both datetimes are tz-aware for subtraction
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
             age_seconds = (now - ts).total_seconds()
             ages.append(max(0, age_seconds))
         

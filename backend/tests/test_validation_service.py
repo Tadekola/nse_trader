@@ -10,7 +10,7 @@ Tests cover:
 6. Batch validation
 """
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, AsyncMock, patch
 
 from app.market_data.providers.base import PriceSnapshot, DataSource, FetchResult
@@ -50,7 +50,7 @@ class TestDataConfidenceScorer:
             change_percent=1.0,
             volume=1000000,
             value=50000000.0,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             source=DataSource.NGX_OFFICIAL,
         )
     
@@ -67,7 +67,7 @@ class TestDataConfidenceScorer:
             change_percent=1.0,
             volume=1000000,
             value=50000000.0,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             source=DataSource.UNKNOWN,
         )
         
@@ -91,7 +91,7 @@ class TestDataConfidenceScorer:
             change_percent=1.0,
             volume=1000000,
             value=50000000.0,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             source=DataSource.UNKNOWN,
         )
         
@@ -114,7 +114,7 @@ class TestDataConfidenceScorer:
             change_percent=1.0,
             volume=1000000,
             value=50000000.0,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             source=DataSource.UNKNOWN,
         )
         
@@ -137,7 +137,7 @@ class TestDataConfidenceScorer:
             change_percent=1.0,
             volume=1000000,
             value=50000000.0,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             source=DataSource.UNKNOWN,
         )
         
@@ -160,7 +160,7 @@ class TestDataConfidenceScorer:
             change_percent=1.0,
             volume=1000000,
             value=50000000.0,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             source=DataSource.UNKNOWN,
         )
         
@@ -182,7 +182,7 @@ class TestDataConfidenceScorer:
     
     def test_secondary_stale_ignored(self, scorer, primary_snapshot):
         """Stale secondary data - should be SECONDARY_STALE status."""
-        stale_time = datetime.utcnow() - timedelta(hours=48)
+        stale_time = datetime.now(timezone.utc) - timedelta(hours=48)
         secondary = PriceSnapshot(
             symbol="GTCO",
             price=50.25,
@@ -209,12 +209,12 @@ class TestDataConfidenceScorer:
             "GTCO": PriceSnapshot(
                 symbol="GTCO", price=50.0, open=49.5, high=50.5, low=49.0,
                 close=50.0, change=0.5, change_percent=1.0, volume=1000000,
-                value=50000000.0, timestamp=datetime.utcnow(), source=DataSource.NGX_OFFICIAL,
+                value=50000000.0, timestamp=datetime.now(timezone.utc), source=DataSource.NGX_OFFICIAL,
             ),
             "ZENITHBANK": PriceSnapshot(
                 symbol="ZENITHBANK", price=30.0, open=29.5, high=30.5, low=29.0,
                 close=30.0, change=0.5, change_percent=1.7, volume=500000,
-                value=15000000.0, timestamp=datetime.utcnow(), source=DataSource.NGX_OFFICIAL,
+                value=15000000.0, timestamp=datetime.now(timezone.utc), source=DataSource.NGX_OFFICIAL,
             ),
         }
         
@@ -222,7 +222,7 @@ class TestDataConfidenceScorer:
             "GTCO": PriceSnapshot(
                 symbol="GTCO", price=50.25, open=49.5, high=50.5, low=49.0,
                 close=50.25, change=0.5, change_percent=1.0, volume=1000000,
-                value=50000000.0, timestamp=datetime.utcnow(), source=DataSource.UNKNOWN,
+                value=50000000.0, timestamp=datetime.now(timezone.utc), source=DataSource.UNKNOWN,
             ),
             # ZENITHBANK missing from secondary
         }
@@ -272,7 +272,7 @@ class TestValidatedSnapshot:
         snapshot = PriceSnapshot(
             symbol="GTCO", price=50.0, open=49.5, high=50.5, low=49.0,
             close=50.0, change=0.5, change_percent=1.0, volume=1000000,
-            value=50000000.0, timestamp=datetime.utcnow(), source=DataSource.NGX_OFFICIAL,
+            value=50000000.0, timestamp=datetime.now(timezone.utc), source=DataSource.NGX_OFFICIAL,
         )
         validation = ValidationResult(
             symbol="GTCO", primary_price=50.0, secondary_price=50.25,
@@ -291,7 +291,7 @@ class TestValidatedSnapshot:
         snapshot = PriceSnapshot(
             symbol="GTCO", price=50.0, open=49.5, high=50.5, low=49.0,
             close=50.0, change=0.5, change_percent=1.0, volume=1000000,
-            value=50000000.0, timestamp=datetime.utcnow(), source=DataSource.NGX_OFFICIAL,
+            value=50000000.0, timestamp=datetime.now(timezone.utc), source=DataSource.NGX_OFFICIAL,
         )
         
         validated = ValidatedSnapshot(snapshot=snapshot, validation=None)
@@ -305,7 +305,7 @@ class TestValidatedSnapshot:
         snapshot = PriceSnapshot(
             symbol="GTCO", price=50.0, open=49.5, high=50.5, low=49.0,
             close=50.0, change=0.5, change_percent=1.0, volume=1000000,
-            value=50000000.0, timestamp=datetime.utcnow(), source=DataSource.NGX_OFFICIAL,
+            value=50000000.0, timestamp=datetime.now(timezone.utc), source=DataSource.NGX_OFFICIAL,
         )
         validation = ValidationResult(
             symbol="GTCO", primary_price=50.0, secondary_price=50.25,
@@ -385,7 +385,7 @@ class TestConfidenceConfig:
         primary = PriceSnapshot(
             symbol="GTCO", price=50.0, open=49.5, high=50.5, low=49.0,
             close=50.0, change=0.5, change_percent=1.0, volume=1000000,
-            value=50000000.0, timestamp=datetime.utcnow(), source=DataSource.NGX_OFFICIAL,
+            value=50000000.0, timestamp=datetime.now(timezone.utc), source=DataSource.NGX_OFFICIAL,
         )
         
         # 0.8% difference - would be agreement with default config
@@ -393,7 +393,7 @@ class TestConfidenceConfig:
         secondary = PriceSnapshot(
             symbol="GTCO", price=50.40, open=49.5, high=50.5, low=49.0,
             close=50.40, change=0.5, change_percent=1.0, volume=1000000,
-            value=50000000.0, timestamp=datetime.utcnow(), source=DataSource.UNKNOWN,
+            value=50000000.0, timestamp=datetime.now(timezone.utc), source=DataSource.UNKNOWN,
         )
         
         result = scorer.validate(primary, secondary)

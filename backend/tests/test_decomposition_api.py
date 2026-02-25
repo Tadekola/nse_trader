@@ -15,7 +15,7 @@ import os
 import sys
 import pytest
 import pytest_asyncio
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event
@@ -67,7 +67,7 @@ async def session(async_engine):
 @pytest_asyncio.fixture
 async def seeded_session(session):
     """Seed with portfolio, transactions, prices, FX, CPI."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     session.add(Portfolio(id=1, name="Test Portfolio", base_currency="NGN"))
 

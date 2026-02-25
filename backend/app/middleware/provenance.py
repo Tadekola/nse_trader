@@ -26,7 +26,7 @@ The middleware only applies to paths under /api/v1/recommendations.
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 
 from fastapi import Request, Response
@@ -122,7 +122,7 @@ def _build_no_trade_response(
             "enforced": True,
             "violations": violations,
             "path": path,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         },
     }
 
@@ -140,7 +140,7 @@ def _build_audit_event(
             "path": path,
             "violations": violations,
             "mode": mode,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         },
     }
 

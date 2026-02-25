@@ -10,7 +10,7 @@ These tests verify:
 """
 import pytest
 import tempfile
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from app.data.historical.storage import (
@@ -246,7 +246,7 @@ class TestForwardReturns:
             data_confidence_score=0.9,
             price_at_signal=25.50,
             horizon="swing",
-            generated_at=datetime.utcnow() - timedelta(days=2)
+            generated_at=datetime.now(timezone.utc) - timedelta(days=2)
         )
         
         # Evaluate the signal

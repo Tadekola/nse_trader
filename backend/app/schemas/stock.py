@@ -1,7 +1,7 @@
 """
 Stock-related Pydantic schemas for the NSE Trader API.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 from pydantic import BaseModel, Field
 from enum import Enum
@@ -58,7 +58,7 @@ class StockPrice(BaseModel):
     change_percent: float = Field(..., description="Percentage change")
     volume: int = Field(..., description="Trading volume")
     value: float = Field(..., description="Trading value in Naira")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class StockFundamentals(BaseModel):
@@ -94,7 +94,7 @@ class StockValidation(BaseModel):
     source: DataSource = Field(..., description="Primary data source")
     sources_available: List[DataSource] = Field(default_factory=list)
     accuracy: float = Field(..., ge=0, le=1, description="Data accuracy score")
-    last_validated: datetime = Field(default_factory=datetime.utcnow)
+    last_validated: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_stale: bool = Field(default=False, description="True if data is potentially outdated")
     warnings: List[str] = Field(default_factory=list)
 

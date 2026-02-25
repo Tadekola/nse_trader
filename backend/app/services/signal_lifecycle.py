@@ -19,7 +19,7 @@ NO_TRADE is triggered when:
 import logging
 from typing import Optional, Dict, List, Any, Tuple
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 import threading
 
@@ -200,7 +200,7 @@ class SignalLifecycleManager:
             Expiry datetime
         """
         if generated_at is None:
-            generated_at = datetime.utcnow()
+            generated_at = datetime.now(timezone.utc)
         
         horizon_lower = horizon.lower()
         
@@ -217,7 +217,7 @@ class SignalLifecycleManager:
     
     def is_expired(self, expires_at: datetime) -> bool:
         """Check if a signal has expired."""
-        return datetime.utcnow() > expires_at
+        return datetime.now(timezone.utc) > expires_at
     
     def evaluate_lifecycle(
         self,
@@ -258,7 +258,7 @@ class SignalLifecycleManager:
             SignalLifecycleResult with determined state
         """
         if generated_at is None:
-            generated_at = datetime.utcnow()
+            generated_at = datetime.now(timezone.utc)
         
         expires_at = self.calculate_expiry(horizon, generated_at)
         
@@ -405,7 +405,7 @@ class SignalLifecycleManager:
         
         return NoTradeDecision(
             symbol=symbol,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             reasons=reasons,
             primary_reason=primary_reason,
             human_readable=human_readable,

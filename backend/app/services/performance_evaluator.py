@@ -15,7 +15,7 @@ Features:
 import logging
 from typing import Optional, Dict, List, Any, Tuple
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 import statistics
 
@@ -59,7 +59,7 @@ class PerformanceMetrics:
     by_regime: Dict[str, Dict[str, Any]]
     by_probability_bucket: Dict[str, Dict[str, Any]]
     evaluation_period: Dict[str, str]
-    computed_at: datetime = field(default_factory=datetime.utcnow)
+    computed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for API response."""
@@ -159,7 +159,7 @@ class PerformanceEvaluator:
         # Update status if we have at least 1d data
         if price_1d is not None:
             signal.status = SignalStatus.EVALUATED
-            signal.evaluated_at = datetime.utcnow()
+            signal.evaluated_at = datetime.now(timezone.utc)
         
         # Update in store
         self.store.update_signal(signal)
@@ -435,7 +435,7 @@ class PerformanceEvaluator:
     
     def get_recent_performance(self, days: int = 30) -> PerformanceMetrics:
         """Get performance metrics for the last N days."""
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(days=days)
         return self.compute_metrics(start_date=start_date, end_date=end_date)
 

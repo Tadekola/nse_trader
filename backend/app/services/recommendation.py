@@ -10,7 +10,7 @@ Provides recommendation generation and management with:
 import logging
 import numpy as np
 from typing import Optional, Dict, List, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import asdict
 import pandas as pd
 
@@ -241,7 +241,7 @@ class RecommendationService:
             bias_probability=bias_signal.bias_probability or 0,
             is_suppressed=bias_signal.is_suppressed,
             suppression_reason=bias_signal.suppression_reason,
-            generated_at=datetime.utcnow()
+            generated_at=datetime.now(timezone.utc)
         )
         
         # Apply lifecycle state
@@ -591,7 +591,7 @@ class RecommendationService:
             "source": market_data_result.source if market_data_result else "unknown",
             "price": stock_data.get("price", 0),
             "volume": stock_data.get("volume", 0),
-            "timestamp": stock_data.get("timestamp", datetime.utcnow().isoformat())
+            "timestamp": stock_data.get("timestamp", datetime.now(timezone.utc).isoformat())
         }
         source_data.append(primary_source)
         
@@ -665,7 +665,7 @@ class RecommendationService:
             "volatility": None,
             "entry_exit": None,
             "signals": [],
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "valid_until": None,
             # Confidence scoring fields
             "status": "SUPPRESSED",
@@ -1015,14 +1015,14 @@ class RecommendationService:
         """Get from cache if not expired."""
         if key in self._cache:
             value, timestamp = self._cache[key]
-            if datetime.utcnow() - timestamp < self._cache_ttl:
+            if datetime.now(timezone.utc) - timestamp < self._cache_ttl:
                 return value
             del self._cache[key]
         return None
     
     def _set_cache(self, key: str, value: Any):
         """Set cache value."""
-        self._cache[key] = (value, datetime.utcnow())
+        self._cache[key] = (value, datetime.now(timezone.utc))
     
     def clear_cache(self):
         """Clear recommendation cache."""

@@ -17,7 +17,7 @@ import sys
 import os
 import pytest
 import pytest_asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from httpx import ASGITransport, AsyncClient
@@ -73,7 +73,7 @@ async def session(async_engine):
 @pytest_asyncio.fixture
 async def seeded_session(session):
     """Seed the DB with test data and return the session."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Signals
     for i in range(25):
@@ -259,7 +259,7 @@ class TestSignalsEndpoint:
 
     @pytest.mark.asyncio
     async def test_date_range_filter(self, app_with_session):
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         start = (now - timedelta(days=5)).strftime("%Y-%m-%d")
         end = now.strftime("%Y-%m-%d")
         async with AsyncClient(

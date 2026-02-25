@@ -6,7 +6,7 @@ Replaces all simulated/random data with actual market information.
 """
 import logging
 from typing import Optional, Dict, List, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 import pandas as pd
 
@@ -56,7 +56,7 @@ class StockData:
     
     def __post_init__(self):
         if self.timestamp is None:
-            self.timestamp = datetime.utcnow()
+            self.timestamp = datetime.now(timezone.utc)
 
 
 class TradingViewDataSource:
@@ -118,7 +118,7 @@ class TradingViewDataSource:
         cache_key = f"{symbol}:{interval}"
         if cache_key in self._cache:
             cached_data, cached_time = self._cache[cache_key]
-            if datetime.utcnow() - cached_time < self._cache_ttl:
+            if datetime.now(timezone.utc) - cached_time < self._cache_ttl:
                 return cached_data
         
         try:
@@ -167,7 +167,7 @@ class TradingViewDataSource:
             )
             
             # Cache the result
-            self._cache[cache_key] = (stock_data, datetime.utcnow())
+            self._cache[cache_key] = (stock_data, datetime.now(timezone.utc))
             
             return stock_data
             
@@ -336,7 +336,7 @@ class TradingViewDataSource:
             'Low': data.low,
             'Close': data.close,
             'Volume': data.volume
-        }], index=[datetime.utcnow()])
+        }], index=[datetime.now(timezone.utc)])
         
         return df
     

@@ -1,7 +1,7 @@
 """
 User-related Pydantic schemas for the NSE Trader API.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 from pydantic import BaseModel, Field, EmailStr
 from enum import Enum
@@ -58,7 +58,7 @@ class WatchlistItem(BaseModel):
     """Stock in a user's watchlist."""
     symbol: str
     name: str
-    added_at: datetime = Field(default_factory=datetime.utcnow)
+    added_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     notes: Optional[str] = None
     target_price: Optional[float] = None
     alert_price_above: Optional[float] = None
@@ -71,8 +71,8 @@ class Watchlist(BaseModel):
     name: str
     description: Optional[str] = None
     items: List[WatchlistItem] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class PortfolioHolding(BaseModel):
@@ -104,8 +104,8 @@ class Portfolio(BaseModel):
     sector_allocation: dict = Field(default_factory=dict)
     top_holdings_concentration: float = Field(..., description="% in top 5 holdings")
     
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class LearningProgress(BaseModel):
@@ -131,7 +131,7 @@ class UserProfile(BaseModel):
     learning_progress: LearningProgress = Field(default_factory=LearningProgress)
     
     # Account info
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_login: Optional[datetime] = None
     is_verified: bool = Field(default=False)
     

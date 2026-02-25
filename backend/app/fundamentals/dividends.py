@@ -6,7 +6,7 @@ This module analyzes dividend characteristics and sustainability.
 """
 from typing import Optional, Dict, List, Any
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 
 
@@ -307,7 +307,7 @@ class DividendAnalyzer:
     ) -> List[Dict[str, Any]]:
         """Get stocks with upcoming dividends."""
         upcoming = []
-        cutoff = datetime.utcnow() + timedelta(days=days_ahead)
+        cutoff = datetime.now(timezone.utc) + timedelta(days=days_ahead)
         
         for stock in stocks:
             ex_date = stock.get('ex_dividend_date')

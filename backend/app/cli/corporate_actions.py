@@ -25,7 +25,7 @@ import asyncio
 import json
 import logging
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import List, Optional
 
 logger = logging.getLogger(__name__)
@@ -183,7 +183,7 @@ async def compute_tri(
                 del_stmt = del_stmt.where(AdjustedPrice.ts <= ed)
             await session.execute(del_stmt)
 
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             for row in tri_result.rows:
                 ap = AdjustedPrice(
                     symbol=row.symbol,

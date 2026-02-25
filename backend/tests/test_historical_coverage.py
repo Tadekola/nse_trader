@@ -9,7 +9,7 @@ These tests verify:
 5. No indicators computed when sessions_available=0
 """
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 from app.services.historical_coverage import (
@@ -73,7 +73,7 @@ class TestHistoricalCoverageDataclass:
             required_sessions=50,
             is_sufficient=False,
             missing_sessions=50,
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(timezone.utc),
             source="NO_HISTORICAL_DATA"
         )
         
@@ -89,7 +89,7 @@ class TestHistoricalCoverageDataclass:
             required_sessions=50,
             is_sufficient=True,
             missing_sessions=0,
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(timezone.utc),
             source="PARTIAL_HISTORY"
         )
         
@@ -105,7 +105,7 @@ class TestHistoricalCoverageDataclass:
             required_sessions=50,
             is_sufficient=False,
             missing_sessions=50,
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(timezone.utc),
             source="NO_HISTORICAL_DATA"
         )
         
@@ -121,7 +121,7 @@ class TestHistoricalCoverageDataclass:
             required_sessions=50,
             is_sufficient=False,
             missing_sessions=20,
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(timezone.utc),
             source="PARTIAL_HISTORY"
         )
         
@@ -144,7 +144,7 @@ class TestHistoricalCoverageDataclass:
             required_sessions=50,
             is_sufficient=False,
             missing_sessions=20,
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(timezone.utc),
             source="PARTIAL_HISTORY"
         )
         
@@ -164,7 +164,7 @@ class TestHistoricalCoverageDataclass:
             required_sessions=50,
             is_sufficient=True,
             missing_sessions=0,
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(timezone.utc),
             source="PARTIAL_HISTORY"
         )
         
@@ -177,7 +177,7 @@ class TestHistoricalCoverageDataclass:
             required_sessions=50,
             is_sufficient=False,
             missing_sessions=40,
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(timezone.utc),
             source="PARTIAL_HISTORY"
         )
         
@@ -191,7 +191,7 @@ class TestHistoricalCoverageDataclass:
             required_sessions=50,
             is_sufficient=False,
             missing_sessions=20,
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(timezone.utc),
             source="PARTIAL_HISTORY",
             indicator_availability={"RSI_14": True, "SMA_50": False},
             indicator_requirements={"RSI_14": 15, "SMA_50": 50},
@@ -334,7 +334,7 @@ class TestIndicatorGating:
                 required_sessions=50,
                 is_sufficient=False,
                 missing_sessions=50,
-                last_updated=datetime.utcnow(),
+                last_updated=datetime.now(timezone.utc),
                 source="NO_HISTORICAL_DATA"
             )
             mock_service.get_coverage.return_value = mock_coverage
@@ -377,7 +377,7 @@ class TestIndicatorGating:
                 required_sessions=50,
                 is_sufficient=True,
                 missing_sessions=0,
-                last_updated=datetime.utcnow(),
+                last_updated=datetime.now(timezone.utc),
                 source="PARTIAL_HISTORY"
             )
             mock_service.get_coverage.return_value = mock_coverage
@@ -427,7 +427,7 @@ class TestAPIDisclosureFields:
             required_sessions=50,
             is_sufficient=False,
             missing_sessions=50,
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(timezone.utc),
             source="NO_HISTORICAL_DATA",
             indicator_availability={"RSI_14": False},
             indicator_requirements={"RSI_14": 15},

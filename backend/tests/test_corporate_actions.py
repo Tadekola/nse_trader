@@ -15,7 +15,7 @@ import os
 import sys
 import pytest
 import pytest_asyncio
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from sqlalchemy import event
 from sqlalchemy.dialects.postgresql import JSONB
@@ -314,12 +314,12 @@ class TestDbRoundTrip:
         ca1 = CorporateAction(
             id=1, symbol="GTCO", action_type="CASH_DIVIDEND",
             ex_date=date(2024, 1, 1), amount=3.0, source="TEST",
-            ingested_at=datetime.utcnow(),
+            ingested_at=datetime.now(timezone.utc),
         )
         ca2 = CorporateAction(
             id=2, symbol="GTCO", action_type="CASH_DIVIDEND",
             ex_date=date(2024, 1, 1), amount=3.0, source="TEST",
-            ingested_at=datetime.utcnow(),
+            ingested_at=datetime.now(timezone.utc),
         )
         session.add(ca1)
         await session.flush()

@@ -18,7 +18,7 @@ Returns a unified ConfidenceScore with:
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any, Tuple
 from enum import Enum
 
@@ -139,7 +139,7 @@ class ValidationResult:
     price_difference_percent: Optional[float] = None
     primary_timestamp: Optional[datetime] = None
     secondary_timestamp: Optional[datetime] = None
-    validated_at: datetime = field(default_factory=datetime.utcnow)
+    validated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     primary_source: str = "NGNMARKET"
     secondary_source: str = "KWAYISI"
     reason_codes: List[ReasonCode] = field(default_factory=list)
@@ -194,7 +194,7 @@ class ConfidenceScore:
     price_variance_percent: float = 0.0
     volume_variance_percent: float = 0.0
     data_age_seconds: float = 0.0
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -416,7 +416,7 @@ class DataConfidenceScorer:
         return score, var_pct
 
     def _calc_freshness(self, source_data: List[Dict[str, Any]]) -> Tuple[float, float]:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         ages: List[float] = []
         for d in source_data:
             ts = d.get("timestamp")
@@ -429,6 +429,8 @@ class DataConfidenceScorer:
                 except ValueError:
                     ages.append(self.config.max_data_age_minutes * 60)
                     continue
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
             ages.append(max(0, (now - ts).total_seconds()))
         if not ages:
             return 0.5, self.config.max_data_age_minutes * 60
@@ -495,7 +497,7 @@ class DataConfidenceScorer:
         return abs(p1 - p2) / p1 * 100
 
     def _is_stale(self, snapshot: Any) -> bool:
-        age = datetime.utcnow() - snapshot.timestamp
+        age = datetime.now(timezone.utc) - snapshot.timestamp
         return age > timedelta(hours=self.config.staleness_hours)
 
     @staticmethod

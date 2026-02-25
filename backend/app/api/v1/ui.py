@@ -16,7 +16,7 @@ import asyncio
 import json
 import logging
 from typing import Optional, AsyncGenerator
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 
@@ -96,7 +96,7 @@ async def get_ui_pulse():
             logger.warning(f"Could not fetch market data for pulse: {e}")
         
         return {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "trust": {
                 "integrity": trust_status.data_integrity.value,
                 "readiness": trust_status.performance_readiness.value,
@@ -126,7 +126,7 @@ async def get_ui_pulse():
     except Exception as e:
         logger.error("Error in /ui/pulse: %s", e)
         return {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "trust": {
                 "integrity": "DEGRADED",
                 "readiness": "NOT_READY",
@@ -227,7 +227,7 @@ async def get_ui_summary(
         unchanged = len(stocks) - advancing - declining
         
         return {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "movers": {
                 "gainers": gainers,
                 "losers": losers,
@@ -252,7 +252,7 @@ async def get_ui_summary(
     except Exception as e:
         logger.error("Error in /ui/summary: %s", e)
         return {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "movers": {"gainers": [], "losers": []},
             "breadth": {"advancing": 0, "declining": 0, "unchanged": 0, "total": 0, "ratio": 0},
             "readiness": {"symbols_ready": 0, "symbols_with_data": 0, "no_trade_count": 0},
@@ -335,7 +335,7 @@ async def generate_sse_events() -> AsyncGenerator[str, None]:
     """Generate Server-Sent Events for real-time updates."""
     
     # Send initial connection event
-    yield f"event: connected\ndata: {json.dumps({'status': 'connected', 'timestamp': datetime.utcnow().isoformat()})}\n\n"
+    yield f"event: connected\ndata: {json.dumps({'status': 'connected', 'timestamp': datetime.now(timezone.utc).isoformat()})}\n\n"
     
     last_pulse = None
     
@@ -347,7 +347,7 @@ async def generate_sse_events() -> AsyncGenerator[str, None]:
             
             pulse_data = {
                 "type": "pulse",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "trust": {
                     "integrity": trust_status.data_integrity.value,
                     "readiness": trust_status.performance_readiness.value,
@@ -369,7 +369,7 @@ async def generate_sse_events() -> AsyncGenerator[str, None]:
                 last_pulse = pulse_json
             
             # Send heartbeat every 30 seconds
-            yield f"event: heartbeat\ndata: {json.dumps({'timestamp': datetime.utcnow().isoformat()})}\n\n"
+            yield f"event: heartbeat\ndata: {json.dumps({'timestamp': datetime.now(timezone.utc).isoformat()})}\n\n"
             
             # Wait before next update
             await asyncio.sleep(10)

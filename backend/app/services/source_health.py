@@ -16,7 +16,7 @@ Usage::
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from app.data.circuit_breaker import (
@@ -45,10 +45,10 @@ class SourceHealthService:
         """Record a successful call to a source."""
         self._ensure(source)
         h = self._health[source]
-        h["last_success"] = datetime.utcnow()
+        h["last_success"] = datetime.now(timezone.utc)
         h["consecutive_failures"] = 0
         h["total_calls"] += 1
-        h["updated_at"] = datetime.utcnow()
+        h["updated_at"] = datetime.now(timezone.utc)
         self._update_error_rate(source)
 
         breaker = self._registry.get(source)
@@ -58,12 +58,12 @@ class SourceHealthService:
         """Record a failed call to a source."""
         self._ensure(source)
         h = self._health[source]
-        h["last_error"] = datetime.utcnow()
+        h["last_error"] = datetime.now(timezone.utc)
         h["last_error_message"] = error
         h["consecutive_failures"] += 1
         h["total_calls"] += 1
         h["total_failures"] += 1
-        h["updated_at"] = datetime.utcnow()
+        h["updated_at"] = datetime.now(timezone.utc)
         self._update_error_rate(source)
 
         breaker = self._registry.get(source)
@@ -73,7 +73,7 @@ class SourceHealthService:
         """Record a stale data detection for a source."""
         self._ensure(source)
         self._health[source]["stale_count"] += 1
-        self._health[source]["updated_at"] = datetime.utcnow()
+        self._health[source]["updated_at"] = datetime.now(timezone.utc)
 
     def get_source(self, source: str) -> Dict[str, Any]:
         """Get health info for a single source."""
@@ -148,7 +148,7 @@ class SourceHealthService:
         return {
             "overall_status": self.overall_status(),
             "sources": self.get_all_sources(),
-            "checked_at": datetime.utcnow().isoformat(),
+            "checked_at": datetime.now(timezone.utc).isoformat(),
         }
 
     # ── internal ─────────────────────────────────────────────────────
@@ -166,7 +166,7 @@ class SourceHealthService:
                 "error_rate": 0.0,
                 "stale_count": 0,
                 "circuit_state": "CLOSED",
-                "updated_at": datetime.utcnow(),
+                "updated_at": datetime.now(timezone.utc),
             }
 
     def _update_error_rate(self, source: str) -> None:

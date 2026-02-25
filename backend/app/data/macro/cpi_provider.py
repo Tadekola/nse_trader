@@ -27,7 +27,7 @@ import io
 import logging
 import os
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -137,11 +137,11 @@ class CsvCpiProvider:
             "frequency": frequency,
             "source": source,
             "confidence": confidence,
-            "ingested_at": datetime.utcnow(),
+            "ingested_at": datetime.now(timezone.utc),
             "provenance": {
                 "source": source,
                 "method": "csv_import",
-                "ingested_at": datetime.utcnow().isoformat(),
+                "ingested_at": datetime.now(timezone.utc).isoformat(),
             },
         }, []
 

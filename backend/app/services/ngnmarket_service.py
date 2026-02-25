@@ -14,7 +14,7 @@ import logging
 import asyncio
 import re
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 
@@ -193,7 +193,7 @@ class NgnMarketService:
         # Check cache
         if use_cache and self._snapshot_cache:
             cached, cached_at = self._snapshot_cache
-            if datetime.utcnow() - cached_at < self._cache_ttl:
+            if datetime.now(timezone.utc) - cached_at < self._cache_ttl:
                 return cached
         
         try:
@@ -217,7 +217,7 @@ class NgnMarketService:
                 updated_at=ss_snapshot.get('updatedAt', ''),
             )
             
-            self._snapshot_cache = (snapshot, datetime.utcnow())
+            self._snapshot_cache = (snapshot, datetime.now(timezone.utc))
             return snapshot
             
         except Exception as e:
@@ -234,7 +234,7 @@ class NgnMarketService:
         # Check cache
         if use_cache and self._trending_cache:
             cached, cached_at = self._trending_cache
-            if datetime.utcnow() - cached_at < self._cache_ttl:
+            if datetime.now(timezone.utc) - cached_at < self._cache_ttl:
                 return cached
         
         try:
@@ -287,7 +287,7 @@ class NgnMarketService:
                 biggest_loser=summary.get('biggestLoser'),
             )
             
-            self._trending_cache = (trending, datetime.utcnow())
+            self._trending_cache = (trending, datetime.now(timezone.utc))
             return trending
             
         except Exception as e:
@@ -303,7 +303,7 @@ class NgnMarketService:
         # Check cache
         if use_cache and self._asi_history_cache:
             cached, cached_at = self._asi_history_cache
-            if datetime.utcnow() - cached_at < self._cache_ttl:
+            if datetime.now(timezone.utc) - cached_at < self._cache_ttl:
                 return cached
         
         try:
@@ -321,7 +321,7 @@ class NgnMarketService:
                     formatted_date=point.get('formattedDate', ''),
                 ))
             
-            self._asi_history_cache = (history, datetime.utcnow())
+            self._asi_history_cache = (history, datetime.now(timezone.utc))
             return history
             
         except Exception as e:
@@ -449,7 +449,7 @@ class NgnMarketService:
                 'asi_trend': asi_trend,
                 'asi_volatility': asi_volatility,
                 'asi_history': [{'date': p.date, 'asi': p.asi} for p in (asi_history or [])[:10]],
-                'timestamp': datetime.utcnow().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
             }
             
         except Exception as e:

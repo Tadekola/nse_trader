@@ -14,7 +14,7 @@ import os
 import sys
 import pytest
 import pytest_asyncio
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from sqlalchemy import event, select, func
 from sqlalchemy.dialects.postgresql import JSONB
@@ -405,9 +405,9 @@ class TestDbRoundTrip:
         from sqlalchemy.exc import IntegrityError
 
         r1 = FxRate(id=1, pair="USDNGN", ts=date(2024, 1, 1), rate=900.0,
-                     source="TEST", ingested_at=datetime.utcnow())
+                     source="TEST", ingested_at=datetime.now(timezone.utc))
         r2 = FxRate(id=2, pair="USDNGN", ts=date(2024, 1, 1), rate=905.0,
-                     source="TEST2", ingested_at=datetime.utcnow())
+                     source="TEST2", ingested_at=datetime.now(timezone.utc))
         session.add(r1)
         await session.flush()
         session.add(r2)

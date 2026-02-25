@@ -16,7 +16,7 @@ Runs once per market session and caches the result.
 import logging
 from typing import Optional, Dict, List, Any, Tuple
 from dataclasses import dataclass, field
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from enum import Enum
 import numpy as np
 
@@ -166,7 +166,7 @@ class SessionRegimeAnalysis:
     reasoning: str
     warnings: List[str]
     session_date: date
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for API responses."""
@@ -246,7 +246,7 @@ class MarketRegimeEngine:
         # Check cache
         if today in self._session_cache:
             cached = self._session_cache[today]
-            if datetime.utcnow() - cached.timestamp < self._cache_ttl:
+            if datetime.now(timezone.utc) - cached.timestamp < self._cache_ttl:
                 logger.debug("Returning cached regime analysis for %s", today)
                 return cached
         
@@ -605,7 +605,7 @@ class MarketRegimeEngine:
         # Check cache
         if today in self._session_cache:
             cached = self._session_cache[today]
-            if datetime.utcnow() - cached.timestamp < self._cache_ttl:
+            if datetime.now(timezone.utc) - cached.timestamp < self._cache_ttl:
                 logger.debug("Returning cached regime analysis for %s", today)
                 return cached
         

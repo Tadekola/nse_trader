@@ -8,7 +8,7 @@ Tests cover:
 - Edge cases and error handling
 """
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import sys
@@ -144,7 +144,7 @@ class TestDataConfidenceScorer:
     @pytest.fixture
     def high_confidence_sources(self):
         """Source data with high agreement (should pass)."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         return [
             {
                 "source": "TradingView",
@@ -163,7 +163,7 @@ class TestDataConfidenceScorer:
     @pytest.fixture
     def low_confidence_sources(self):
         """Source data with low agreement (should fail)."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         return [
             {
                 "source": "TradingView",
@@ -182,7 +182,7 @@ class TestDataConfidenceScorer:
     @pytest.fixture
     def stale_data_sources(self):
         """Source data that is too old."""
-        old_time = datetime.utcnow() - timedelta(hours=2)
+        old_time = datetime.now(timezone.utc) - timedelta(hours=2)
         return [
             {
                 "source": "TradingView",
@@ -259,7 +259,7 @@ class TestDataConfidenceScorer:
     
     def test_single_low_reliability_source_suppressed(self, scorer):
         """Test that single low-reliability source triggers suppression."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         source_data = [
             {
                 "source": "Simulated",  # Low reliability source
@@ -281,7 +281,7 @@ class TestDataConfidenceScorer:
     
     def test_price_agreement_perfect(self, scorer):
         """Test price agreement score with identical prices."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         source_data = [
             {"source": "TradingView", "price": 100.0, "volume": 1000000, "timestamp": now.isoformat()},
             {"source": "NGX", "price": 100.0, "volume": 1000000, "timestamp": now.isoformat()}
@@ -294,7 +294,7 @@ class TestDataConfidenceScorer:
     
     def test_volume_agreement_tolerance(self, scorer):
         """Test that volume agreement is more tolerant than price."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         source_data = [
             {"source": "TradingView", "price": 100.0, "volume": 1000000, "timestamp": now.isoformat()},
             {"source": "NGX", "price": 100.0, "volume": 1100000, "timestamp": now.isoformat()}  # 10% diff
@@ -309,8 +309,8 @@ class TestDataConfidenceScorer:
     
     def test_freshness_score_decay(self, scorer):
         """Test that freshness score decays with data age."""
-        fresh_time = datetime.utcnow()
-        old_time = datetime.utcnow() - timedelta(minutes=15)
+        fresh_time = datetime.now(timezone.utc)
+        old_time = datetime.now(timezone.utc) - timedelta(minutes=15)
         
         fresh_data = [{"source": "TradingView", "price": 100.0, "volume": 1000000, "timestamp": fresh_time.isoformat()}]
         old_data = [{"source": "TradingView", "price": 100.0, "volume": 1000000, "timestamp": old_time.isoformat()}]
@@ -322,7 +322,7 @@ class TestDataConfidenceScorer:
     
     def test_source_availability_multiple_sources_bonus(self, scorer):
         """Test that multiple high-reliability sources get bonus."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         single_source = [
             {"source": "TradingView", "price": 100.0, "volume": 1000000, "timestamp": now.isoformat()}
@@ -347,7 +347,7 @@ class TestDataConfidenceScorer:
         config = ConfidenceScoreConfig(min_confidence_threshold=0.75)
         scorer_with_config = DataConfidenceScorer(config)
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         source_data = [
             {"source": "NGX", "price": 100.0, "volume": 1000000, "timestamp": now.isoformat()}
         ]
@@ -362,7 +362,7 @@ class TestDataConfidenceScorer:
     
     def test_price_variance_threshold(self, scorer):
         """Test that price variance above threshold triggers suppression."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         # 12% price difference (well above 5% default threshold)
         source_data = [
             {"source": "TradingView", "price": 100.0, "volume": 1000000, "timestamp": now.isoformat()},
@@ -399,7 +399,7 @@ class TestDataConfidenceScorer:
             "source": "TradingView",
             "price": 100.0,
             "volume": 1000000,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         
         result = scorer.calculate_from_single_source(
@@ -416,7 +416,7 @@ class TestDataConfidenceScorer:
             "source": "TradingView",
             "price": 100.0,
             "volume": 1000000,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "discrepancies": [
                 {
                     "field": "price",
@@ -488,7 +488,7 @@ class TestEdgeCases:
     
     def test_zero_price_handling(self, scorer):
         """Test handling of zero prices."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         source_data = [
             {"source": "TradingView", "price": 0.0, "volume": 1000000, "timestamp": now.isoformat()}
         ]
@@ -522,7 +522,7 @@ class TestEdgeCases:
     
     def test_negative_values_handling(self, scorer):
         """Test handling of negative values."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         source_data = [
             {"source": "TradingView", "price": -100.0, "volume": -1000000, "timestamp": now.isoformat()}
         ]
@@ -534,7 +534,7 @@ class TestEdgeCases:
     
     def test_unknown_source_handling(self, scorer):
         """Test handling of unknown data sources."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         source_data = [
             {"source": "UnknownSource", "price": 100.0, "volume": 1000000, "timestamp": now.isoformat()}
         ]

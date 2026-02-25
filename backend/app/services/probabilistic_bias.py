@@ -17,7 +17,7 @@ import logging
 from typing import Optional, Dict, List, Any, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,7 @@ class BiasSignal:
     regime_adjustment_factor: float = 1.0
     pre_regime_probability: Optional[int] = None
     regime_metadata: Optional[Dict[str, Any]] = None
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for API responses."""

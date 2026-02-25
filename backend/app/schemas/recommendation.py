@@ -1,7 +1,7 @@
 """
 Recommendation-related Pydantic schemas for the NSE Trader API.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 from enum import Enum
@@ -52,7 +52,7 @@ class Signal(BaseModel):
     threshold: Optional[str] = Field(None, description="Threshold description")
     plain_english: str = Field(..., description="Human-readable explanation")
     confidence: float = Field(..., ge=0, le=1, description="Signal confidence 0-1")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class RiskMetrics(BaseModel):
@@ -154,7 +154,7 @@ class Recommendation(BaseModel):
     sector_context: Optional[str] = None
     
     # Metadata
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     valid_until: Optional[datetime] = None
     historical_accuracy: Optional[float] = Field(None, description="Historical accuracy of similar signals")
     

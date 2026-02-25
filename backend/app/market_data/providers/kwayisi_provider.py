@@ -22,7 +22,7 @@ Design:
 import logging
 import asyncio
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 
@@ -83,8 +83,8 @@ class ValidationSnapshot:
     def is_stale(self, max_age_hours: int = 24) -> bool:
         """Check if data is stale."""
         if self.last_trade_date:
-            return (datetime.utcnow() - self.last_trade_date) > timedelta(hours=max_age_hours)
-        return (datetime.utcnow() - self.timestamp) > timedelta(hours=max_age_hours)
+            return (datetime.now(timezone.utc) - self.last_trade_date) > timedelta(hours=max_age_hours)
+        return (datetime.now(timezone.utc) - self.timestamp) > timedelta(hours=max_age_hours)
 
 
 class KwayisiNGXProvider(MarketDataProvider):
@@ -226,7 +226,7 @@ class KwayisiNGXProvider(MarketDataProvider):
                             change_percent=round(change_percent, 2),
                             volume=volume,
                             value=0.0,
-                            timestamp=datetime.utcnow(),
+                            timestamp=datetime.now(timezone.utc),
                             source=self.source,
                             previous_close=prev_close
                         )
@@ -347,10 +347,10 @@ class KwayisiNGXProvider(MarketDataProvider):
     async def _rate_limit(self):
         """Apply rate limiting between requests."""
         if self._last_request_time:
-            elapsed = (datetime.utcnow() - self._last_request_time).total_seconds() * 1000
+            elapsed = (datetime.now(timezone.utc) - self._last_request_time).total_seconds() * 1000
             if elapsed < self.MIN_REQUEST_INTERVAL_MS:
                 await asyncio.sleep((self.MIN_REQUEST_INTERVAL_MS - elapsed) / 1000)
-        self._last_request_time = datetime.utcnow()
+        self._last_request_time = datetime.now(timezone.utc)
         self._request_count += 1
     
     async def _fetch_stock_data(self, symbol: str) -> Optional[PriceSnapshot]:
@@ -467,7 +467,7 @@ class KwayisiNGXProvider(MarketDataProvider):
                 change_percent=change_percent,
                 volume=volume,
                 value=0.0,  # Not available
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 source=DataSource.UNKNOWN,  # Custom source
                 previous_close=prev_close,
             )

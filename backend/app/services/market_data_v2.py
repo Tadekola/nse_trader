@@ -13,7 +13,7 @@ See Phase 0 audit findings for details.
 import logging
 import asyncio
 from typing import Optional, Dict, List, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
 
 from app.data.sources.ngx_stocks import NGXStockRegistry, Sector
@@ -118,7 +118,7 @@ class MarketDataServiceV2:
                 success=False,
                 data=None,
                 source="none",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 error="Failed to fetch market data",
                 meta=result.to_meta_dict()
             )
@@ -140,7 +140,7 @@ class MarketDataServiceV2:
             success=True,
             data=enriched_stocks,
             source=self._determine_primary_source(result),
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             meta=result.to_meta_dict()
         )
     
@@ -173,7 +173,7 @@ class MarketDataServiceV2:
                 success=False,
                 data=None,
                 source="none",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 error=f"Stock {symbol} not found",
                 meta=result.to_meta_dict()
             )
@@ -186,7 +186,7 @@ class MarketDataServiceV2:
             success=True,
             data=enriched,
             source=snapshot.source.value,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             meta=result.to_meta_dict()
         )
     
@@ -224,7 +224,7 @@ class MarketDataServiceV2:
                 success=True,
                 data=enriched_stocks,
                 source=self._determine_primary_source(result),
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 meta=result.to_meta_dict()
             )
         except ValueError:
@@ -232,7 +232,7 @@ class MarketDataServiceV2:
                 success=False,
                 data=None,
                 source="none",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 error=f"Invalid sector: {sector}"
             )
 
@@ -268,7 +268,7 @@ class MarketDataServiceV2:
             success=True,
             data=enriched_stocks,
             source=self._determine_primary_source(result),
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             meta=result.to_meta_dict()
         )
 
@@ -312,7 +312,7 @@ class MarketDataServiceV2:
                 'total_value': total_value
             },
             'stock_count': len(stocks),
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'data_meta': all_stocks_result.meta
         }
         
@@ -320,7 +320,7 @@ class MarketDataServiceV2:
             success=True,
             data=summary,
             source=all_stocks_result.source,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             meta=all_stocks_result.meta
         )
 
@@ -345,7 +345,7 @@ class MarketDataServiceV2:
             success=True,
             data=results,
             source="Registry",
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(timezone.utc)
         )
     
     def get_sectors(self) -> MarketDataResult:
@@ -355,7 +355,7 @@ class MarketDataServiceV2:
             success=True,
             data=sectors,
             source="Registry",
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(timezone.utc)
         )
     
     async def get_technical_indicators_async(self, symbol: str) -> MarketDataResult:
@@ -386,7 +386,7 @@ class MarketDataServiceV2:
             success=True,
             data=indicators,
             source=result.source,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             meta=result.meta
         )
 

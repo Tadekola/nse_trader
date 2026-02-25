@@ -9,7 +9,7 @@ These tests verify that the system is truthful-by-default:
 5. Apt Securities provider is removed from chain
 """
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, AsyncMock, patch
 
 from fastapi.testclient import TestClient
@@ -156,7 +156,7 @@ class TestSimulationDisclosure:
             change_percent=1.0,
             volume=1000,
             value=100000.0,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             source=DataSource.SIMULATED,
             is_simulated=True,
             simulated_reason="Test reason",
@@ -182,7 +182,7 @@ class TestSimulationDisclosure:
             change_percent=1.0,
             volume=1000,
             value=100000.0,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             source=DataSource.SIMULATED,
             is_simulated=True,
             simulated_reason="Test reason",
@@ -211,7 +211,7 @@ class TestSimulationDisclosure:
             change_percent=1.0,
             volume=1000,
             value=100000.0,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             source=DataSource.NGX_OFFICIAL,
             is_simulated=False
         )

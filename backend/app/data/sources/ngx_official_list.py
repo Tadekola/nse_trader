@@ -18,7 +18,7 @@ import hashlib
 import logging
 import os
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -211,7 +211,7 @@ class NgxOfficialListDownloader:
             url=url or self._build_url(trade_date),
             local_path=str(path),
             sha256=hashlib.sha256(content).hexdigest(),
-            downloaded_at=datetime.utcnow(),
+            downloaded_at=datetime.now(timezone.utc),
             file_size_bytes=len(content),
         )
 

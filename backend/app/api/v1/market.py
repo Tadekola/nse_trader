@@ -11,7 +11,7 @@ import logging
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +99,7 @@ async def get_market_snapshot():
     return MarketSnapshotResponse(
         success=True,
         data=snapshot.to_dict(),
-        timestamp=datetime.utcnow().isoformat()
+        timestamp=datetime.now(timezone.utc).isoformat()
     )
 
 
@@ -309,5 +309,5 @@ async def get_market_summary():
         "breadth": breadth_data,
         "regime": regime_info,
         "source": "ngnmarket.com",
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }

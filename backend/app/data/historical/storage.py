@@ -17,7 +17,7 @@ Storage format:
 """
 import logging
 import sqlite3
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
@@ -569,7 +569,7 @@ class HistoricalOHLCVStorage:
                         row['first_date'],
                         row['last_date'],
                         row['total_sessions'],
-                        datetime.utcnow().isoformat(),
+                        datetime.now(timezone.utc).isoformat(),
                         status.value,
                         error,
                         rejected_count,
@@ -594,7 +594,7 @@ class HistoricalOHLCVStorage:
                     VALUES (?, NULL, NULL, 0, ?, 'NGNMARKET_HISTORICAL', ?, ?, ?)
                 """, (
                     symbol,
-                    datetime.utcnow().isoformat(),
+                    datetime.now(timezone.utc).isoformat(),
                     IngestionStatus.FAILED.value,
                     error,
                     rejected_count,

@@ -11,7 +11,7 @@ Verifies:
 import sys
 import os
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -40,7 +40,7 @@ class TestCalculateConfidence:
     """Tests for calculate_confidence() entry point."""
 
     def test_two_agreeing_sources_high_confidence(self, scorer):
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         sources = [
             {"price": 10.0, "volume": 1000, "source": "NGNMARKET", "timestamp": now},
             {"price": 10.05, "volume": 1050, "source": "kwayisi", "timestamp": now},
@@ -52,7 +52,7 @@ class TestCalculateConfidence:
         assert len(result.reason_codes) == 0
 
     def test_stale_data_emits_reason_code(self, scorer):
-        old = datetime.utcnow() - timedelta(hours=2)
+        old = datetime.now(timezone.utc) - timedelta(hours=2)
         sources = [
             {"price": 10.0, "volume": 1000, "source": "NGNMARKET", "timestamp": old},
         ]
@@ -67,7 +67,7 @@ class TestCalculateConfidence:
         assert ReasonCode.INSUFFICIENT_SOURCES in result.reason_codes
 
     def test_high_price_variance_emits_reason(self, scorer):
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         sources = [
             {"price": 10.0, "volume": 1000, "source": "NGNMARKET", "timestamp": now},
             {"price": 12.0, "volume": 1000, "source": "kwayisi", "timestamp": now},
@@ -77,7 +77,7 @@ class TestCalculateConfidence:
         assert result.is_suppressed
 
     def test_high_volume_variance_emits_reason(self, scorer):
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         sources = [
             {"price": 10.0, "volume": 1000, "source": "NGNMARKET", "timestamp": now},
             {"price": 10.0, "volume": 5000, "source": "kwayisi", "timestamp": now},
@@ -86,7 +86,7 @@ class TestCalculateConfidence:
         assert ReasonCode.HIGH_VOLUME_VARIANCE in result.reason_codes
 
     def test_circuit_breaker_suppresses(self, scorer):
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         sources = [
             {"price": 10.0, "volume": 1000, "source": "NGNMARKET", "timestamp": now},
         ]
@@ -96,7 +96,7 @@ class TestCalculateConfidence:
         assert result.overall_score == 0.0
 
     def test_single_low_reliability_source(self, scorer):
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         sources = [
             {"price": 10.0, "volume": 1000, "source": "simulated", "timestamp": now},
         ]
@@ -104,7 +104,7 @@ class TestCalculateConfidence:
         assert ReasonCode.INSUFFICIENT_SOURCES in result.reason_codes
 
     def test_to_dict_structure(self, scorer):
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         sources = [
             {"price": 10.0, "volume": 1000, "source": "NGNMARKET", "timestamp": now},
         ]
@@ -118,7 +118,7 @@ class TestCalculateConfidence:
         assert isinstance(d["reason_codes"], list)
 
     def test_strict_threshold_suppresses_mediocre_data(self, strict_scorer):
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         sources = [
             {"price": 10.0, "volume": 1000, "source": "NGNMARKET", "timestamp": now},
         ]
@@ -138,7 +138,7 @@ class TestValidate:
             symbol=symbol,
             price=price,
             source=SimpleNamespace(value=source),
-            timestamp=ts or datetime.utcnow(),
+            timestamp=ts or datetime.now(timezone.utc),
         )
 
     def test_validated_when_prices_agree(self, scorer):
@@ -165,7 +165,7 @@ class TestValidate:
 
     def test_stale_secondary(self, scorer):
         primary = self._make_snapshot("DANGCEM", 300.0)
-        old_ts = datetime.utcnow() - timedelta(hours=48)
+        old_ts = datetime.now(timezone.utc) - timedelta(hours=48)
         secondary = self._make_snapshot("DANGCEM", 300.0, source="kwayisi", ts=old_ts)
         result = scorer.validate(primary, secondary)
         assert result.status == ValidationStatus.SECONDARY_STALE

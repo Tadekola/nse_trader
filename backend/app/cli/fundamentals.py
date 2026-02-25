@@ -11,7 +11,7 @@ import asyncio
 import os
 import sys
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -69,7 +69,7 @@ async def import_csv(csv_path: str, source: str) -> None:
                 for key, val in rec.items():
                     if key not in ("symbol", "period_end_date", "period_type", "source"):
                         setattr(existing, key, val)
-                existing.ingested_at = datetime.utcnow()
+                existing.ingested_at = datetime.now(timezone.utc)
                 existing.provenance = {
                     "csv_hash": result.csv_hash,
                     "csv_path": os.path.basename(csv_path),
@@ -175,7 +175,7 @@ async def compute_derived(as_of_str: str) -> None:
                              "data_freshness_days", "periods_available"):
                     setattr(existing, attr, getattr(metrics, attr))
                 existing.red_flags = metrics.red_flags
-                existing.computed_at = datetime.utcnow()
+                existing.computed_at = datetime.now(timezone.utc)
             else:
                 session.add(FundamentalsDerived(
                     symbol=symbol,

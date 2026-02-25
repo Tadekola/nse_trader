@@ -9,7 +9,7 @@ Source: https://ngxgroup.com/exchange/data/equities-price-list/
 
 import logging
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 import re
 
@@ -141,7 +141,7 @@ class NgxEquitiesPriceListProvider(MarketDataProvider):
                 else:
                     symbols_missing.append(symbol)
             
-            self._last_fetch = datetime.utcnow()
+            self._last_fetch = datetime.now(timezone.utc)
             
             return FetchResult(
                 success=True,
@@ -345,7 +345,7 @@ class NgxEquitiesPriceListProvider(MarketDataProvider):
                 change_percent=change_pct,
                 volume=volume,
                 value=value,
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 source=DataSource.NGX_OFFICIAL,
                 trades=NumericParser.parse_volume(record.get('trades') or record.get('deals')),
                 previous_close=NumericParser.parse_price(record.get('previous') or record.get('prev')),
@@ -397,7 +397,7 @@ class NgxEquitiesPriceListProvider(MarketDataProvider):
                 change_percent=NumericParser.parse_percent(get_cell_value('change_percent'), 0.0),
                 volume=NumericParser.parse_volume(get_cell_value('volume')),
                 value=NumericParser.parse_value(get_cell_value('value')),
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 source=DataSource.NGX_OFFICIAL,
                 trades=NumericParser.parse_volume(get_cell_value('trades')),
                 previous_close=NumericParser.parse_price(get_cell_value('previous_close')),

@@ -13,7 +13,7 @@ Features:
 import logging
 from typing import Optional, Dict, List, Any, Tuple
 from dataclasses import dataclass, field
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from enum import Enum
 
 from app.data.historical.storage import (
@@ -158,7 +158,7 @@ class PerformanceResponse:
     unevaluated_signal_count: int = 0
     unevaluated_reasons: Dict[str, int] = field(default_factory=dict)
     stale_symbols_excluded_count: int = 0
-    computed_at: datetime = field(default_factory=datetime.utcnow)
+    computed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     
     def to_dict(self) -> Dict[str, Any]:
         # Get educational explanation for this status
@@ -512,7 +512,7 @@ class PerformanceService:
         
         Returns transparent metrics including what couldn't be evaluated.
         """
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(days=days)
         
         # Get signals in range
@@ -599,7 +599,7 @@ class PerformanceService:
         
         Returns INSUFFICIENT_SAMPLE if not enough signals.
         """
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(days=days)
         
         all_signals = self.signal_store.get_signals_in_range(start_date, end_date)
@@ -699,7 +699,7 @@ class PerformanceService:
     
     def get_by_direction(self, days: int = 30) -> PerformanceResponse:
         """Get performance broken down by bias direction."""
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(days=days)
         
         all_signals = self.signal_store.get_signals_in_range(start_date, end_date)
@@ -754,7 +754,7 @@ class PerformanceService:
     
     def get_by_regime(self, days: int = 30) -> PerformanceResponse:
         """Get performance broken down by market regime."""
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(days=days)
         
         all_signals = self.signal_store.get_signals_in_range(start_date, end_date)

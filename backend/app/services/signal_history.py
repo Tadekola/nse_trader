@@ -15,7 +15,7 @@ import logging
 import threading
 from typing import Optional, Dict, List, Any
 from dataclasses import dataclass, field, asdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 import json
 
@@ -252,7 +252,7 @@ class SignalHistoryStore:
             The stored TrackedSignal
         """
         if generated_at is None:
-            generated_at = datetime.utcnow()
+            generated_at = datetime.now(timezone.utc)
         
         # Generate deterministic ID
         signal_id = generate_signal_id(symbol, bias_direction, generated_at, horizon)
@@ -338,7 +338,7 @@ class SignalHistoryStore:
         with self._lock:
             return [
                 s for s in self._signals.values()
-                if start_date <= s.generated_at <= end_date
+                if start_date <= (s.generated_at.replace(tzinfo=timezone.utc) if s.generated_at.tzinfo is None else s.generated_at) <= end_date
             ]
     
     def update_signal(self, signal: TrackedSignal):

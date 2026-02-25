@@ -14,7 +14,7 @@ Design Principles:
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 from enum import Enum
 
@@ -58,7 +58,7 @@ class ValidationResult:
     # Timestamps
     primary_timestamp: Optional[datetime] = None
     secondary_timestamp: Optional[datetime] = None
-    validated_at: datetime = field(default_factory=datetime.utcnow)
+    validated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     
     # Sources
     primary_source: str = "NGNMARKET"
@@ -344,7 +344,7 @@ class DataConfidenceScorer:
     def _is_stale(self, snapshot: PriceSnapshot) -> bool:
         """Check if snapshot is too old."""
         from datetime import timedelta
-        age = datetime.utcnow() - snapshot.timestamp
+        age = datetime.now(timezone.utc) - snapshot.timestamp
         return age > timedelta(hours=self.config.staleness_hours)
     
     def get_cached_result(self, symbol: str) -> Optional[ValidationResult]:

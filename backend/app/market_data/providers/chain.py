@@ -10,7 +10,7 @@ Logs counts from each source for transparency.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 
@@ -51,7 +51,7 @@ class ChainFetchResult:
     source_breakdown: SourceBreakdown = field(default_factory=SourceBreakdown)
     is_simulated: bool = False  # True if ANY data is simulated
     simulated_symbols: List[str] = field(default_factory=list)
-    last_updated: datetime = field(default_factory=datetime.utcnow)
+    last_updated: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     errors: List[str] = field(default_factory=list)
     fetch_time_ms: float = 0.0
     # Phase 1: Simulation metrics
@@ -74,11 +74,11 @@ class CacheEntry:
     """Cache entry with TTL."""
     def __init__(self, data: Any, ttl_seconds: int = 120):
         self.data = data
-        self.created_at = datetime.utcnow()
+        self.created_at = datetime.now(timezone.utc)
         self.ttl = timedelta(seconds=ttl_seconds)
     
     def is_valid(self) -> bool:
-        return datetime.utcnow() - self.created_at < self.ttl
+        return datetime.now(timezone.utc) - self.created_at < self.ttl
 
 
 class InMemoryCache:
@@ -272,7 +272,7 @@ class ProviderChain:
         self._total_fetch_count += 1
         if simulated_symbols:
             self._simulation_fallback_count += 1
-            self._last_simulated_at = datetime.utcnow()
+            self._last_simulated_at = datetime.now(timezone.utc)
         
         # Calculate simulation rate
         simulation_rate = len(simulated_symbols) / len(all_snapshots) if all_snapshots else 0.0
@@ -283,7 +283,7 @@ class ProviderChain:
             source_breakdown=breakdown,
             is_simulated=len(simulated_symbols) > 0,
             simulated_symbols=simulated_symbols,
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(timezone.utc),
             errors=errors,
             fetch_time_ms=fetch_time,
             simulation_rate=simulation_rate,

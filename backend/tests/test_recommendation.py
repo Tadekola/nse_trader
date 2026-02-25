@@ -9,7 +9,7 @@ Covers:
 """
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.services.recommendation import RecommendationService
 from app.core.recommendation_engine import (
@@ -105,7 +105,7 @@ async def test_get_recommendation_success(recommendation_service, mock_validatio
     snapshot = PriceSnapshot(
         symbol=symbol, price=50.0, open=49.0, high=51.0, low=49.0, close=50.0,
         change=1.0, change_percent=2.0, volume=1000000, value=50000000,
-        timestamp=datetime.utcnow(), source=DataSource.NGX_OFFICIAL
+        timestamp=datetime.now(timezone.utc), source=DataSource.NGX_OFFICIAL
     )
     validation_res = ValidationResult(
         symbol=symbol, primary_price=50.0, secondary_price=50.0,
@@ -149,7 +149,7 @@ async def test_get_recommendation_success(recommendation_service, mock_validatio
     
     # 4. Setup Lifecycle Result
     mock_lifecycle_manager.evaluate_lifecycle.return_value = Mock(
-        state=Mock(value="active"), is_active=True, expires_at=datetime.utcnow(),
+        state=Mock(value="active"), is_active=True, expires_at=datetime.now(timezone.utc),
         is_valid=True, warnings=[], no_trade_decision=None
     )
     
@@ -177,7 +177,7 @@ async def test_get_recommendation_suppressed(recommendation_service, mock_valida
     snapshot = PriceSnapshot(
         symbol=symbol, price=50.0, open=49.0, high=51.0, low=49.0, close=50.0,
         change=1.0, change_percent=2.0, volume=1000000, value=50000000,
-        timestamp=datetime.utcnow(), source=DataSource.NGX_OFFICIAL
+        timestamp=datetime.now(timezone.utc), source=DataSource.NGX_OFFICIAL
     )
     validation_res = ValidationResult(
         symbol=symbol, primary_price=50.0, secondary_price=60.0, # Divergent

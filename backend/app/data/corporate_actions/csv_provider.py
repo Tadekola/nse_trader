@@ -24,7 +24,7 @@ import csv
 import logging
 import os
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -219,10 +219,10 @@ class CsvCorporateActionProvider:
             "confidence": confidence,
             "notes": notes,
             "artifact_ref": None,
-            "ingested_at": datetime.utcnow(),
+            "ingested_at": datetime.now(timezone.utc),
             "provenance": {
                 "source": source,
-                "ingested_at": datetime.utcnow().isoformat(),
+                "ingested_at": datetime.now(timezone.utc).isoformat(),
                 "method": "csv_import",
             },
         }

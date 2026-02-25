@@ -10,7 +10,7 @@ Detects overall market conditions to adjust signal interpretation:
 - Crisis: Reduce all signals to HOLD
 """
 from typing import Optional, Dict, List, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from enum import Enum
 import pandas as pd
@@ -67,7 +67,7 @@ class RegimeAnalysis:
     
     def __post_init__(self):
         if self.timestamp is None:
-            self.timestamp = datetime.utcnow()
+            self.timestamp = datetime.now(timezone.utc)
 
 
 class MarketRegimeDetector:
@@ -265,7 +265,7 @@ class MarketRegimeDetector:
     
     def _update_regime_history(self, regime: MarketRegime) -> int:
         """Update regime history and return duration in days."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         if self._current_regime != regime:
             self._current_regime = regime

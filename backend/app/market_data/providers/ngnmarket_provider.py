@@ -13,7 +13,7 @@ import logging
 import asyncio
 import re
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 
 try:
@@ -145,7 +145,7 @@ class NgnMarketProvider(MarketDataProvider):
             else:
                 symbols_missing.append(symbol)
         
-        self._last_fetch = datetime.utcnow()
+        self._last_fetch = datetime.now(timezone.utc)
         fetch_time = (time.time() - start_time) * 1000
         
         logger.info(f"NGN Market: fetched {len(snapshots)}/{len(symbols)} symbols in {fetch_time:.0f}ms")
@@ -241,7 +241,7 @@ class NgnMarketProvider(MarketDataProvider):
                 change_percent=change_percent,
                 volume=volume,
                 value=value,
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 source=DataSource.NGX_OFFICIAL,
                 previous_close=prev_close,
             )

@@ -13,7 +13,7 @@ import os
 import sys
 import pytest
 import pytest_asyncio
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event
@@ -65,7 +65,7 @@ async def session(async_engine):
 @pytest_asyncio.fixture
 async def seeded_session(session):
     """Seed with OHLCV, corporate actions, and adjusted prices for DANGCEM."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # OHLCV prices: 10 days
     for i in range(10):

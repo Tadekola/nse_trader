@@ -6,7 +6,7 @@ with caching, validation, and fallback handling.
 """
 import logging
 from typing import Optional, Dict, List, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 import pandas as pd
 
@@ -60,7 +60,7 @@ class MarketDataService:
                 success=True,
                 data=cached,
                 source="cache",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 cached=True
             )
         
@@ -78,7 +78,7 @@ class MarketDataService:
                 success=True,
                 data=enriched,
                 source="TradingView",
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(timezone.utc)
             )
         
         # Fallback to registry only - add simulated price fields
@@ -90,20 +90,20 @@ class MarketDataService:
                 **registry_data,
                 **simulated,
                 'source': 'Simulated',
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             }
             return MarketDataResult(
                 success=True,
                 data=enriched_registry,
                 source="Simulated",
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(timezone.utc)
             )
         
         return MarketDataResult(
             success=False,
             data=None,
             source="none",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             error=f"Stock {symbol} not found"
         )
     
@@ -116,7 +116,7 @@ class MarketDataService:
                 success=True,
                 data=cached,
                 source="cache",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 cached=True
             )
         
@@ -137,7 +137,7 @@ class MarketDataService:
             success=True,
             data=stocks,
             source="TradingView+Registry",
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(timezone.utc)
         )
     
     def get_stocks_by_sector(self, sector: str) -> MarketDataResult:
@@ -156,14 +156,14 @@ class MarketDataService:
                 success=True,
                 data=stocks,
                 source="TradingView+Registry",
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(timezone.utc)
             )
         except ValueError:
             return MarketDataResult(
                 success=False,
                 data=None,
                 source="none",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 error=f"Invalid sector: {sector}"
             )
     
@@ -181,7 +181,7 @@ class MarketDataService:
             success=True,
             data=stocks,
             source="TradingView+Registry",
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(timezone.utc)
         )
     
     def get_technical_indicators(self, symbol: str) -> MarketDataResult:
@@ -194,14 +194,14 @@ class MarketDataService:
                 success=True,
                 data=indicators,
                 source="TradingView",
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(timezone.utc)
             )
         
         return MarketDataResult(
             success=False,
             data=None,
             source="none",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             error="Failed to fetch indicators"
         )
     
@@ -214,7 +214,7 @@ class MarketDataService:
                 success=True,
                 data=cached,
                 source="cache",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 cached=True
             )
         
@@ -251,7 +251,7 @@ class MarketDataService:
                 'total_value': total_value
             },
             'stock_count': len(stocks),
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now(timezone.utc).isoformat()
         }
         
         # Cache result
@@ -261,7 +261,7 @@ class MarketDataService:
             success=True,
             data=summary,
             source="TradingView+Calculated",
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(timezone.utc)
         )
     
     def search_stocks(self, query: str) -> MarketDataResult:
@@ -271,7 +271,7 @@ class MarketDataService:
             success=True,
             data=results,
             source="Registry",
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(timezone.utc)
         )
     
     def get_sectors(self) -> MarketDataResult:
@@ -281,7 +281,7 @@ class MarketDataService:
             success=True,
             data=sectors,
             source="Registry",
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(timezone.utc)
         )
     
     def _enrich_stock_data(
@@ -330,7 +330,7 @@ class MarketDataService:
         """Get value from cache if not expired."""
         if key in self._cache:
             value, timestamp = self._cache[key]
-            if datetime.utcnow() - timestamp < self._cache_ttl:
+            if datetime.now(timezone.utc) - timestamp < self._cache_ttl:
                 return value
             del self._cache[key]
         return None
@@ -342,7 +342,7 @@ class MarketDataService:
         ttl: Optional[timedelta] = None
     ):
         """Set value in cache."""
-        self._cache[key] = (value, datetime.utcnow())
+        self._cache[key] = (value, datetime.now(timezone.utc))
     
     def clear_cache(self):
         """Clear all cached data."""
@@ -360,7 +360,7 @@ class MarketDataService:
         
         # Use symbol hash for consistent "random" values per stock
         seed = int(hashlib.md5(symbol.encode()).hexdigest()[:8], 16)
-        random.seed(seed + datetime.utcnow().hour)  # Changes hourly
+        random.seed(seed + datetime.now(timezone.utc).hour)  # Changes hourly
         
         # Calculate base price from market cap
         market_cap = registry_data.get('market_cap_billions', 100) * 1e9

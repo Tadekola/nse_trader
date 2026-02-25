@@ -8,7 +8,7 @@ Designed to run as a background task on app startup via asyncio.
 """
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 
 from app.data.historical.storage import get_historical_storage
@@ -54,7 +54,7 @@ def evaluate_pending_signals() -> Dict[str, int]:
     if not pending:
         return {"evaluated": 0, "pending": 0, "skipped_no_data": 0, "errors": 0}
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     evaluated = 0
     skipped = 0
     errors = 0

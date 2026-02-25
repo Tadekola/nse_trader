@@ -12,7 +12,7 @@ which is critical for:
 """
 import asyncio
 import logging
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +118,7 @@ async def daily_ohlcv_loop():
     while True:
         try:
             today = date.today()
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
 
             # Skip weekends (Sat=5, Sun=6)
             if today.weekday() >= 5:

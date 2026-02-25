@@ -11,7 +11,7 @@ All records carry provenance metadata.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,7 +52,7 @@ class AuditService:
             session = await self._get_session()
             async with session:
                 event = NoTradeEvent(
-                    ts=datetime.utcnow(),
+                    ts=datetime.now(timezone.utc),
                     scope=scope,
                     symbol=symbol.upper() if symbol else None,
                     reason_code=reason_code,
@@ -86,7 +86,7 @@ class AuditService:
             session = await self._get_session()
             async with session:
                 event = AuditEvent(
-                    ts=datetime.utcnow(),
+                    ts=datetime.now(timezone.utc),
                     component=component,
                     level=level,
                     event_type=event_type,
@@ -133,7 +133,7 @@ class AuditService:
                     status=status,
                     params=params or {},
                     provenance=provenance or {},
-                    created_at=datetime.utcnow(),
+                    created_at=datetime.now(timezone.utc),
                     expires_at=expires_at,
                 )
                 session.add(signal)

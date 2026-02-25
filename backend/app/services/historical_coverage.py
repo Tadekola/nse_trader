@@ -13,7 +13,7 @@ preventing misleading signals based on incomplete information.
 import logging
 from typing import Dict, List, Optional, Any, Set
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -289,7 +289,7 @@ class HistoricalCoverageService:
             required_sessions=required_sessions,
             is_sufficient=is_sufficient,
             missing_sessions=missing_sessions,
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(timezone.utc),
             source=source,
             indicator_availability=indicator_availability,
             indicator_requirements=indicator_requirements,
