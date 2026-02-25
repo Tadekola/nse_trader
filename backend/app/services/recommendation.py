@@ -647,7 +647,7 @@ class RecommendationService:
             "current_price": stock_data.get("price", 0),
             "primary_reason": "Recommendation suppressed due to insufficient data quality",
             "supporting_reasons": [
-                reason.value for reason in confidence_score.suppression_reasons
+                reason.value for reason in confidence_score.reason_codes
             ],
             "risk_warnings": [
                 "Data quality insufficient for reliable recommendation",

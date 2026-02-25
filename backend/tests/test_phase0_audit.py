@@ -27,7 +27,7 @@ class TestPerformanceEndpointsReadiness:
         from app.api.v1.performance import get_performance_summary
         import asyncio
         
-        response = asyncio.get_event_loop().run_until_complete(
+        response = asyncio.run(
             get_performance_summary(days=30)
         )
         
@@ -39,7 +39,7 @@ class TestPerformanceEndpointsReadiness:
         from app.api.v1.performance import get_performance_status
         import asyncio
         
-        response = asyncio.get_event_loop().run_until_complete(get_performance_status())
+        response = asyncio.run(get_performance_status())
         
         # Phase 3: Now returns READY, PARTIALLY_READY, or NOT_READY
         assert response["status"] in ["READY", "PARTIALLY_READY", "NOT_READY"]
@@ -51,7 +51,7 @@ class TestPerformanceEndpointsReadiness:
         from app.api.v1.performance import get_performance_summary
         import asyncio
         
-        response = asyncio.get_event_loop().run_until_complete(
+        response = asyncio.run(
             get_performance_summary(days=30)
         )
         

@@ -37,7 +37,7 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://nse_trader:nse_trader@postgres:5432/nse_trader
       - DATABASE_URL_SYNC=postgresql+psycopg2://nse_trader:nse_trader@postgres:5432/nse_trader
-      - ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3002,http://frontend:3000
+      - ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3002,http://localhost:3333,http://127.0.0.1:3333,http://frontend:3000
       - ENV=dev
     depends_on:
       postgres:
