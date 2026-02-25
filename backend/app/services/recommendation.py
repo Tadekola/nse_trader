@@ -270,7 +270,8 @@ class RecommendationService:
             user_level=user_level
         )
         
-        # Cache result
+        # Cache result (sanitize numpy types for JSON serialization)
+        result = _sanitize_numpy(result)
         self._set_cache(cache_key, result)
         
         return result

@@ -357,8 +357,8 @@ class MarketRegimeEngine:
             volume_current=float(vol_current_val),
             volume_baseline=float(vol_baseline_avg),
             volume_ratio=float(volume_ratio),
-            volume_spike=volume_ratio > self.VOLUME_SPIKE_THRESHOLD,
-            volatility_spike=vol_ratio > self.VOLATILITY_SPIKE_THRESHOLD
+            volume_spike=bool(volume_ratio > self.VOLUME_SPIKE_THRESHOLD),
+            volatility_spike=bool(vol_ratio > self.VOLATILITY_SPIKE_THRESHOLD)
         )
     
     def _classify_regime(
@@ -661,8 +661,8 @@ class MarketRegimeEngine:
             volume_current=float(volume),
             volume_baseline=float(volume) / volume_ratio if volume_ratio > 0 else float(volume),
             volume_ratio=volume_ratio,
-            volume_spike=volume_ratio > self.VOLUME_SPIKE_THRESHOLD,
-            volatility_spike=vol_ratio > self.VOLATILITY_SPIKE_THRESHOLD
+            volume_spike=bool(volume_ratio > self.VOLUME_SPIKE_THRESHOLD),
+            volatility_spike=bool(vol_ratio > self.VOLATILITY_SPIKE_THRESHOLD)
         )
         
         # Use breadth data to refine classification
