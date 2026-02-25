@@ -33,6 +33,9 @@ DEFAULT_TOP_N = 50
 DEFAULT_MIN_SESSIONS = 30      # must have at least 30 trading days in window
 DEFAULT_MAX_ZERO_PCT = 0.40    # exclude if >40% of days are zero-volume
 
+# Indices and non-tradable symbols to exclude from universe
+EXCLUDED_SYMBOLS = {"ASI", "NGXASI", "NGX-ASI", "NGX30", "NGXBNK", "NGXINS", "NGXOILGAS"}
+
 
 @dataclass
 class LiquidityResult:
@@ -110,7 +113,10 @@ def compute_liquidity(
             zero_volume_pct=zero_pct,
         )
 
-        if total < min_sessions:
+        if symbol in EXCLUDED_SYMBOLS:
+            lr.excluded = True
+            lr.exclude_reason = "index_or_non_tradable"
+        elif total < min_sessions:
             lr.excluded = True
             lr.exclude_reason = f"insufficient_sessions ({total} < {min_sessions})"
         elif zero_pct > max_zero_pct:
