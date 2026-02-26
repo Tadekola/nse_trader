@@ -3,7 +3,7 @@ Unit tests for Data Confidence Scoring module.
 
 Tests cover:
 - Confidence score calculation
-- Suppression rules (confidence < 0.75, price variance, etc.)
+- Suppression rules (confidence < 0.65, price variance, etc.)
 - Component score calculations
 - Edge cases and error handling
 """
@@ -31,10 +31,10 @@ class TestConfidenceScoreConfig:
         """Test default configuration values are set correctly."""
         config = ConfidenceScoreConfig()
         
-        assert config.min_confidence_threshold == 0.75
+        assert config.min_confidence_threshold == 0.65
         assert config.max_price_variance_percent == 5.0
         assert config.max_volume_variance_percent == 20.0
-        assert config.max_data_age_minutes == 30
+        assert config.max_data_age_minutes == 1440
         assert config.price_weight == 0.40
         assert config.volume_weight == 0.20
         assert config.freshness_weight == 0.20
@@ -182,7 +182,7 @@ class TestDataConfidenceScorer:
     @pytest.fixture
     def stale_data_sources(self):
         """Source data that is too old."""
-        old_time = datetime.now(timezone.utc) - timedelta(hours=2)
+        old_time = datetime.now(timezone.utc) - timedelta(hours=48)  # Well beyond 24h max_data_age
         return [
             {
                 "source": "TradingView",
@@ -202,7 +202,7 @@ class TestDataConfidenceScorer:
         )
         
         assert result.is_suppressed is False
-        assert result.overall_score >= 0.75
+        assert result.overall_score >= 0.65
         assert result.suppression_reasons == []
         assert result.human_readable_reason is None
     
@@ -214,7 +214,7 @@ class TestDataConfidenceScorer:
         )
         
         assert result.is_suppressed is True
-        assert result.overall_score < 0.75
+        assert result.overall_score < 0.65
         # Should have at least one of the variance suppression reasons
         assert (
             SuppressionReason.HIGH_PRICE_VARIANCE in result.suppression_reasons or

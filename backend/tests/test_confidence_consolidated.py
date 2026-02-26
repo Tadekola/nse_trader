@@ -46,13 +46,13 @@ class TestCalculateConfidence:
             {"price": 10.05, "volume": 1050, "source": "kwayisi", "timestamp": now},
         ]
         result = scorer.calculate_confidence("DANGCEM", sources)
-        assert result.overall_score >= 0.75
+        assert result.overall_score >= 0.65
         assert not result.is_suppressed
         assert result.confidence_level in (ConfidenceLevel.HIGH, ConfidenceLevel.MEDIUM)
         assert len(result.reason_codes) == 0
 
     def test_stale_data_emits_reason_code(self, scorer):
-        old = datetime.now(timezone.utc) - timedelta(hours=2)
+        old = datetime.now(timezone.utc) - timedelta(hours=48)  # Well beyond 24h max_data_age
         sources = [
             {"price": 10.0, "volume": 1000, "source": "NGNMARKET", "timestamp": old},
         ]

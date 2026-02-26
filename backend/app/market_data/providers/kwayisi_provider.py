@@ -358,8 +358,11 @@ class KwayisiNGXProvider(MarketDataProvider):
         # Map symbol using centralized SymbolAliasRegistry
         registry = get_symbol_alias_registry()
         
+        # Resolve provider-specific symbol (e.g. ACCESSCORP -> ACCESS)
+        provider_symbol = registry.get_provider_symbol(symbol, DataProvider.KWAYISI)
+        
         # Kwayisi uses lowercase symbols in URLs
-        mapped_symbol = symbol.lower()
+        mapped_symbol = provider_symbol.lower()
         url = self.STOCK_URL.format(symbol=mapped_symbol)
         
         response = await http_fetch(

@@ -687,7 +687,7 @@ class RecommendationService:
                 f"data confidence ({confidence_score.overall_score:.1%}) is below the required threshold. "
                 f"Reason: {confidence_score.human_readable_reason}"
             ),
-            "liquidity_score": stock_data.get("liquidity_tier", "unknown"),
+            "liquidity_score": None,
             "liquidity_warning": None,
             "market_regime": "unknown",
             "risk_level": "unknown",
@@ -884,10 +884,13 @@ class RecommendationService:
         secondary_source = None
         
         if validated_snapshot.validation and validated_snapshot.validation.secondary_price:
-            sources_used.append("kwayisi")
-            secondary_source = "kwayisi"
+            sec_src = getattr(validated_snapshot.validation, 'secondary_source', None) or "secondary"
+            sources_used.append(sec_src)
+            secondary_source = sec_src
 
-        is_suppressed = validated_snapshot.confidence_score < 0.75
+        # Use configurable threshold from ConfidenceConfig (not hardcoded)
+        threshold = ConfidenceConfig().min_confidence_threshold
+        is_suppressed = validated_snapshot.confidence_score < threshold
             
         return ConfidenceScore(
             symbol=validated_snapshot.snapshot.symbol,

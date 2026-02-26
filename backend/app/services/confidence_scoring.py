@@ -43,10 +43,10 @@ class ConfidenceScoreConfig:
         freshness_weight: Weight for data freshness in overall score (0.0-1.0)
         source_weight: Weight for source availability in overall score (0.0-1.0)
     """
-    min_confidence_threshold: float = 0.75
+    min_confidence_threshold: float = 0.65
     max_price_variance_percent: float = 5.0
     max_volume_variance_percent: float = 20.0
-    max_data_age_minutes: int = 30
+    max_data_age_minutes: int = 1440  # 24h — NGX trades ~6h/day, data is stale after hours
     price_weight: float = 0.40
     volume_weight: float = 0.20
     freshness_weight: float = 0.20

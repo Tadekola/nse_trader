@@ -5,7 +5,7 @@ Orchestrates parallel data fetching from primary and secondary sources,
 performs validation, and provides confidence-scored results.
 
 Design:
-- Primary (ngnmarket) and secondary (kwayisi) fetch in parallel
+- Primary (ngnmarket) and secondary (NGX Official) fetch in parallel
 - Secondary NEVER blocks primary rendering
 - Validation results enhance confidence scoring
 - Respects all Phase 0-5 safeguards
@@ -19,10 +19,7 @@ from typing import Dict, List, Optional, Any
 
 from app.market_data.providers.base import PriceSnapshot, FetchResult
 from app.market_data.providers.ngnmarket_provider import NgnMarketProvider
-from app.market_data.providers.kwayisi_provider import (
-    KwayisiNGXProvider,
-    get_kwayisi_provider,
-)
+from app.market_data.providers.ngx_provider import NgxEquitiesPriceListProvider
 from app.services.confidence import (
     DataConfidenceScorer,
     ValidationResult,
@@ -162,11 +159,11 @@ class ValidationService:
     def __init__(
         self,
         primary_provider: Optional[NgnMarketProvider] = None,
-        secondary_provider: Optional[KwayisiNGXProvider] = None,
+        secondary_provider: Optional[NgxEquitiesPriceListProvider] = None,
         confidence_scorer: Optional[DataConfidenceScorer] = None,
     ):
         self._primary = primary_provider or NgnMarketProvider()
-        self._secondary = secondary_provider or get_kwayisi_provider()
+        self._secondary = secondary_provider or NgxEquitiesPriceListProvider()
         self._scorer = confidence_scorer or get_confidence_scorer()
         
         # Caching

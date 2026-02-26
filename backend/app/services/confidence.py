@@ -69,7 +69,7 @@ class ValidationStatus(str, Enum):
 class ConfidenceConfig:
     """All thresholds in one place."""
     # Suppression
-    min_confidence_threshold: float = 0.75
+    min_confidence_threshold: float = 0.65
 
     # Price agreement
     max_price_variance_percent: float = 5.0
@@ -82,7 +82,7 @@ class ConfidenceConfig:
     max_volume_variance_percent: float = 20.0
 
     # Freshness
-    max_data_age_minutes: int = 30
+    max_data_age_minutes: int = 1440  # 24h — NGX trades ~6h/day, data is stale after hours
     staleness_hours: int = 24
 
     # Weights (must sum to 1.0)

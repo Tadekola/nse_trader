@@ -19,6 +19,7 @@ class DataProvider(str, Enum):
     """Supported data providers."""
     NGNMARKET = "ngnmarket"
     NGX_OFFICIAL = "ngx"
+    KWAYISI = "kwayisi"
     APT_SECURITIES = "apt"  # Disabled but kept for reference
     SIMULATED = "simulated"
 
@@ -38,6 +39,7 @@ class SymbolMapping:
     canonical: str
     ngnmarket: Optional[str] = None
     ngx: Optional[str] = None
+    kwayisi: Optional[str] = None
     unsupported_providers: Set[DataProvider] = field(default_factory=set)
     notes: Optional[str] = None
     
@@ -50,6 +52,8 @@ class SymbolMapping:
             return self.ngnmarket or self.canonical
         elif provider == DataProvider.NGX_OFFICIAL:
             return self.ngx or self.canonical
+        elif provider == DataProvider.KWAYISI:
+            return self.kwayisi or self.canonical
         elif provider == DataProvider.SIMULATED:
             return self.canonical
         
@@ -128,7 +132,8 @@ class SymbolAliasRegistry:
             canonical="ACCESSCORP",
             ngnmarket="ACCESSCORP",
             ngx="ACCESSCORP",
-            notes="Access Holdings Plc"
+            kwayisi="ACCESS",
+            notes="Access Holdings Plc - kwayisi uses old ticker ACCESS"
         ),
         
         # ZENITHBANK - standard
