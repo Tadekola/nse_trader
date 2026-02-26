@@ -255,13 +255,13 @@ export default function StockDetailPage() {
             {rec.volatility != null && (
               <div className="flex justify-between">
                 <span className="text-terminal-dim">Volatility</span>
-                <span className="text-terminal-text">{(Number(rec.volatility) * 100).toFixed(1)}%</span>
+                <span className="text-terminal-text">{Number(rec.volatility).toFixed(1)}%</span>
               </div>
             )}
             {rec.max_drawdown != null && (
               <div className="flex justify-between">
                 <span className="text-terminal-dim">Max Drawdown</span>
-                <span className="text-terminal-red">{(Number(rec.max_drawdown) * 100).toFixed(1)}%</span>
+                <span className="text-terminal-red">{Number(rec.max_drawdown).toFixed(1)}%</span>
               </div>
             )}
             {rec.liquidity_score != null && (

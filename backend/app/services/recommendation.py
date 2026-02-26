@@ -129,20 +129,25 @@ class RecommendationService:
         if cached:
             return cached
         
-        # Get validated data
+        # Get validated data (with fallback to direct market data)
         try:
             validation_result = await self.validation_service.fetch_validated([symbol])
             validated_snapshot = validation_result.snapshots.get(symbol)
             
-            if not validated_snapshot:
-                logger.warning(f"Failed to get data for {symbol}")
-                return None
-                
-            # Convert validation result to ConfidenceScore
-            confidence_score = self._convert_validation_to_confidence(validated_snapshot)
-            
-            # Enrich snapshot to stock_data dict
-            stock_data = self._enrich_snapshot_to_dict(validated_snapshot.snapshot)
+            if validated_snapshot:
+                # Convert validation result to ConfidenceScore
+                confidence_score = self._convert_validation_to_confidence(validated_snapshot)
+                # Enrich snapshot to stock_data dict
+                stock_data = self._enrich_snapshot_to_dict(validated_snapshot.snapshot)
+            else:
+                # Validation returned no snapshot — fallback to direct fetch
+                logger.info(f"Validation empty for {symbol}, falling back to direct fetch")
+                stock_result = await self.market_data.get_stock_async(symbol)
+                if not stock_result.success:
+                    logger.warning(f"Failed to get data for {symbol}")
+                    return None
+                stock_data = stock_result.data
+                confidence_score = self._calculate_confidence_score(symbol, stock_data, stock_result)
             
         except Exception as e:
             logger.error(f"Error fetching validated data for {symbol}: {e}")

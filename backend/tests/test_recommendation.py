@@ -202,7 +202,7 @@ async def test_get_recommendation_suppressed(recommendation_service, mock_valida
     assert result["bias_probability"] is None  # Should be None for suppressed
 
 @pytest.mark.asyncio
-async def test_get_recommendation_no_data(recommendation_service, mock_validation_service):
+async def test_get_recommendation_no_data(recommendation_service, mock_validation_service, mock_market_data_service):
     """Test handling when no data is returned."""
     symbol = "UNKNOWN"
     
@@ -210,6 +210,11 @@ async def test_get_recommendation_no_data(recommendation_service, mock_validatio
         snapshots={}, # Empty
         primary_count=0, secondary_count=0, validated_count=0, divergent_count=0
     )
+    
+    # Fallback market data also fails
+    fallback_result = Mock()
+    fallback_result.success = False
+    mock_market_data_service.get_stock_async.return_value = fallback_result
     
     result = await recommendation_service.get_recommendation(symbol)
     
