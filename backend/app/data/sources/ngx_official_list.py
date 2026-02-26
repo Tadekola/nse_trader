@@ -235,7 +235,7 @@ class NgxOfficialListParser:
         "symbol": "security",
         "ticker": "security",
         "stock": "security",
-        "security name": "security",
+        "security name": "security_name",
         # serial number (skip)
         "s/n": "sn",
         "no": "sn",
@@ -247,10 +247,12 @@ class NgxOfficialListParser:
         "ref price": "prev_close",
         "reference price": "prev_close",
         "prev.close": "prev_close",
+        "public quotation price (n)": "prev_close",
         # OHLC
         "open": "open",
         "opening": "open",
         "opening price": "open",
+        "official open": "open",
         "high": "high",
         "highest": "high",
         "high price": "high",
@@ -261,6 +263,8 @@ class NgxOfficialListParser:
         "closing": "close",
         "closing price": "close",
         "last": "close",
+        "official close": "close",
+        "current market price": "close",
         # change
         "change": "change",
         "chg": "change",
@@ -276,11 +280,15 @@ class NgxOfficialListParser:
         "quantity": "volume",
         "vol. traded": "volume",
         "volume traded": "volume",
+        "qty": "volume",
         "value": "value",
         "turnover": "value",
         "value (n)": "value",
         "value (₦)": "value",
         "value(n)": "value",
+        # NGX groups (used to detect two-row headers)
+        "business done": "_group_business_done",
+        "52 wk": "_group_52wk",
     }
 
     def parse(self, pdf_path: Path, trade_date: date) -> List[ParsedRow]:
@@ -303,6 +311,8 @@ class NgxOfficialListParser:
         try:
             with pdfplumber.open(pdf_path) as pdf:
                 column_map: Optional[Dict[int, str]] = None
+                # Track whether next row might be a sub-header
+                pending_subheader = False
 
                 for page_num, page in enumerate(pdf.pages):
                     tables = page.extract_tables(
@@ -338,11 +348,23 @@ class NgxOfficialListParser:
                             ):
                                 continue
 
+                            # Process sub-header row (second row of two-row header)
+                            if pending_subheader and column_map is not None:
+                                self._merge_subheader(row_data, column_map)
+                                pending_subheader = False
+                                logger.debug(
+                                    "Sub-header merged on page %d: %s",
+                                    page_num + 1,
+                                    column_map,
+                                )
+                                continue
+
                             # Detect header row
                             if column_map is None:
                                 detected = self._detect_header(row_data)
                                 if detected:
                                     column_map = detected
+                                    pending_subheader = True
                                     logger.debug(
                                         "Header detected on page %d: %s",
                                         page_num + 1,
@@ -355,6 +377,7 @@ class NgxOfficialListParser:
                                 potential = self._detect_header(row_data)
                                 if potential:
                                     column_map = potential
+                                    pending_subheader = True
                                 continue
 
                             if column_map is None:
@@ -383,6 +406,9 @@ class NgxOfficialListParser:
         """
         Detect if a row is a table header and return
         column index → field name mapping.
+
+        Handles both simple headers ("Open", "Close") and NGX
+        grouped headers ("Official Open", "Current Market Price").
         """
         mapping: Dict[int, str] = {}
         has_security = False
@@ -395,6 +421,10 @@ class NgxOfficialListParser:
             normalized = " ".join(str(cell).strip().lower().split())
             if normalized in self._COLUMN_MAP:
                 field_name = self._COLUMN_MAP[normalized]
+                # Skip internal group markers from mapping
+                if field_name.startswith("_group_"):
+                    mapping[idx] = field_name
+                    continue
                 mapping[idx] = field_name
                 if field_name == "security":
                     has_security = True
@@ -403,13 +433,71 @@ class NgxOfficialListParser:
 
         # Must have at least security + close to be a valid header
         if has_security and has_close:
+            # Remove group markers (they're used for sub-header merging)
             return mapping
         return None
+
+    def _merge_subheader(
+        self,
+        row: List[Optional[str]],
+        column_map: Dict[int, str],
+    ) -> None:
+        """
+        Merge sub-header row into column_map.
+
+        The NGX Daily Official List has two-row headers:
+          Row 1: Symbol | ... | Business Done | ... | 52 wk | ...
+          Row 2:        | ... | Price | Date | Qty  | High  | Low  | ...
+
+        Sub-header cells under "Business Done" → map "qty" to volume.
+        Sub-header cells under "52 wk" → SKIP (not daily H/L).
+        """
+        # Find group column indices
+        biz_done_idx = None
+        wk52_idx = None
+        for idx, field in list(column_map.items()):
+            if field == "_group_business_done":
+                biz_done_idx = idx
+            elif field == "_group_52wk":
+                wk52_idx = idx
+
+        # Map sub-header cells
+        for idx, cell in enumerate(row):
+            if cell is None:
+                continue
+            normalized = " ".join(str(cell).strip().lower().split())
+
+            # Under "Business Done" group → Qty = volume, Price = last_price
+            if biz_done_idx is not None and idx >= biz_done_idx:
+                if wk52_idx is not None and idx >= wk52_idx:
+                    pass  # skip 52-wk sub-headers
+                elif normalized in ("qty", "quantity"):
+                    column_map[idx] = "volume"
+                elif normalized == "price":
+                    column_map[idx] = "last_price"
+                continue
+
+            # Under "52 wk" group → intentionally skip (not daily H/L)
+            if wk52_idx is not None and idx >= wk52_idx:
+                continue
+
+            # Other sub-header cells — try normal mapping
+            if normalized in self._COLUMN_MAP:
+                field_name = self._COLUMN_MAP[normalized]
+                if not field_name.startswith("_group_"):
+                    column_map[idx] = field_name
+
+        # Clean up group markers
+        for idx in list(column_map.keys()):
+            if column_map[idx].startswith("_group_"):
+                del column_map[idx]
 
     def _is_header_row(self, row: List[Optional[str]]) -> bool:
         """Check if row looks like a repeated header."""
         text = " ".join(str(c).lower() for c in row if c)
-        return "security" in text and ("close" in text or "closing" in text)
+        has_id = "security" in text or "symbol" in text
+        has_price = "close" in text or "closing" in text or "market price" in text
+        return has_id and has_price
 
     def _parse_data_row(
         self,
@@ -423,8 +511,8 @@ class NgxOfficialListParser:
             if idx < len(row):
                 fields[field_name] = row[idx]
 
-        # Must have a security name
-        symbol_raw = fields.get("security")
+        # Prefer ticker symbol over full security name
+        symbol_raw = fields.get("security") or fields.get("security_name")
         if not symbol_raw or not str(symbol_raw).strip():
             return None
 
