@@ -536,25 +536,25 @@ class RecommendationEngine:
         
         # Very high risk reduces bullish recommendations
         if risk_level == RiskLevel.VERY_HIGH:
-            if score > 0.20:
+            if score > 0.08:
                 return RecommendationAction.BUY  # Cap at BUY, not STRONG_BUY
-            elif score > 0.05:
+            elif score > 0.00:
                 return RecommendationAction.HOLD
-            elif score > -0.05:
+            elif score > -0.08:
                 return RecommendationAction.HOLD
-            elif score > -0.15:
+            elif score > -0.12:
                 return RecommendationAction.SELL
             else:
                 return RecommendationAction.STRONG_SELL
         
         # Normal action mapping
-        if score >= 0.20:
+        if score >= 0.12:
             return RecommendationAction.STRONG_BUY
-        elif score >= 0.10:
+        elif score >= 0.04:
             return RecommendationAction.BUY
-        elif score >= -0.10:
+        elif score >= -0.04:
             return RecommendationAction.HOLD
-        elif score >= -0.20:
+        elif score >= -0.12:
             return RecommendationAction.SELL
         else:
             return RecommendationAction.STRONG_SELL
