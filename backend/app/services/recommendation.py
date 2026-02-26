@@ -134,7 +134,7 @@ class RecommendationService:
         try:
             validation_result = await asyncio.wait_for(
                 self.validation_service.fetch_validated([symbol]),
-                timeout=15.0
+                timeout=30.0
             )
             validated_snapshot = validation_result.snapshots.get(symbol)
             
@@ -149,7 +149,7 @@ class RecommendationService:
                 try:
                     stock_result = await asyncio.wait_for(
                         self.market_data.get_stock_async(symbol),
-                        timeout=10.0
+                        timeout=15.0
                     )
                 except asyncio.TimeoutError:
                     logger.warning(f"Fallback fetch timed out for {symbol}")
@@ -169,7 +169,7 @@ class RecommendationService:
             try:
                 stock_result = await asyncio.wait_for(
                     self.market_data.get_stock_async(symbol),
-                    timeout=10.0
+                    timeout=15.0
                 )
             except asyncio.TimeoutError:
                 logger.warning(f"Fallback fetch timed out for {symbol}")

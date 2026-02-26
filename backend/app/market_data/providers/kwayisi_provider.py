@@ -365,6 +365,7 @@ class KwayisiNGXProvider(MarketDataProvider):
         response = await http_fetch(
             url,
             timeout=self._timeout,
+            max_retries=1,
             raise_for_status=False,
         )
         
