@@ -200,12 +200,12 @@ class SymbolAliasRegistry:
             notes="Nestle Nigeria Plc"
         ),
         
-        # STANBIC - may need mapping
+        # STANBIC - ngnmarket uses same symbol
         "STANBIC": SymbolMapping(
             canonical="STANBIC",
-            ngnmarket="STANBICIBTC",
+            ngnmarket="STANBIC",
             ngx="STANBIC",
-            notes="Stanbic IBTC Holdings - ngnmarket uses STANBICIBTC"
+            notes="Stanbic IBTC Holdings"
         ),
         
         # OANDO - standard

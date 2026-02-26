@@ -173,8 +173,8 @@ class TestKnownOffenderMappings:
         assert ngnmarket_symbol == "JAPAULGOLD"
     
     def test_stanbic_mapping(self, registry):
-        """STANBIC should map to STANBICIBTC on ngnmarket."""
-        assert registry.get_provider_symbol("STANBIC", DataProvider.NGNMARKET) == "STANBICIBTC"
+        """STANBIC should map to STANBIC on ngnmarket."""
+        assert registry.get_provider_symbol("STANBIC", DataProvider.NGNMARKET) == "STANBIC"
     
     def test_sterling_mapping(self, registry):
         """STERLING should map to STERLINGNG on ngnmarket."""

@@ -2,7 +2,7 @@
 Price Reconciliation Tests for Top Picks.
 
 Validates:
-1. Ticker normalization (STANBIC → STANBICIBTC on ngnmarket)
+1. Ticker normalization (STANBIC → STANBIC on ngnmarket)
 2. API response includes trade_date and price_source fields
 3. Staleness detection flags old prices
 4. Prices come from historical OHLCV DB (raw close, not adjusted)
@@ -16,14 +16,14 @@ from datetime import date, timedelta
 class TestTickerNormalization:
     """Verify symbol alias registry maps correctly for all providers."""
 
-    def test_stanbic_maps_to_stanbicibtc_on_ngnmarket(self):
+    def test_stanbic_maps_to_stanbic_on_ngnmarket(self):
         from app.data.sources.symbol_aliases import (
             get_symbol_alias_registry,
             DataProvider,
         )
         registry = get_symbol_alias_registry()
         mapped = registry.get_provider_symbol("STANBIC", DataProvider.NGNMARKET)
-        assert mapped == "STANBICIBTC", f"Expected STANBICIBTC, got {mapped}"
+        assert mapped == "STANBIC", f"Expected STANBIC, got {mapped}"
 
     def test_firstholdco_is_canonical(self):
         """FIRSTHOLDCO should be in the stock registry (was FBNH)."""
