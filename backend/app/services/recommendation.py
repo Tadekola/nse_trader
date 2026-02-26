@@ -216,7 +216,8 @@ class RecommendationService:
                 bias_signal=bias_signal,
                 regime_analysis=session_regime
             )
-            result['market_regime'] = session_regime.to_dict()
+            result['market_regime'] = session_regime.regime.value
+            result['market_regime_details'] = session_regime.to_dict()
         
         # Add probabilistic bias fields to result (external-facing)
         result['bias_direction'] = bias_signal.bias_direction.value
@@ -361,7 +362,8 @@ class RecommendationService:
                 bias_signal=bias_signal,
                 regime_analysis=session_regime
             )
-            result['market_regime'] = session_regime.to_dict()
+            result['market_regime'] = session_regime.regime.value
+            result['market_regime_details'] = session_regime.to_dict()
 
         # Add probabilistic bias fields
         result['bias_direction'] = bias_signal.bias_direction.value
@@ -990,12 +992,15 @@ class RecommendationService:
             'market_regime': rec.market_regime.value,
             'risk_level': rec.risk_metrics.risk_level.value,
             'volatility': rec.risk_metrics.volatility_20d,
-            'entry_exit': {
-                'entry_price': rec.entry_exit.entry_price,
-                'stop_loss': rec.entry_exit.stop_loss,
-                'target_1': rec.entry_exit.target_1,
-                'risk_reward': rec.entry_exit.risk_reward_ratio
-            } if rec.entry_exit else None,
+            'entry_price': rec.entry_exit.entry_price if rec.entry_exit else None,
+            'entry_zone_low': rec.entry_exit.entry_zone_low if rec.entry_exit else None,
+            'entry_zone_high': rec.entry_exit.entry_zone_high if rec.entry_exit else None,
+            'stop_loss': rec.entry_exit.stop_loss if rec.entry_exit else None,
+            'stop_loss_percent': rec.entry_exit.stop_loss_percent if rec.entry_exit else None,
+            'target_1': rec.entry_exit.target_1 if rec.entry_exit else None,
+            'target_2': rec.entry_exit.target_2 if rec.entry_exit else None,
+            'target_3': rec.entry_exit.target_3 if rec.entry_exit else None,
+            'risk_reward_ratio': rec.entry_exit.risk_reward_ratio if rec.entry_exit else None,
             'signals': [
                 {
                     'name': s.name,
