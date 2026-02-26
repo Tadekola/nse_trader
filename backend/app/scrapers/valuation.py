@@ -375,23 +375,21 @@ class ValuationEngine:
             else:
                 scores.append(0)
 
-        # Operating margin
+        # Operating margin (fall back to net margin if no operating_profit)
         om = _safe_div(op_profit, revenue)
+        if om is None:
+            om = _safe_div(net_income, revenue)
         if om is not None:
-            if om is None:
-                # Fallback: use net_income as proxy
-                om = _safe_div(net_income, revenue)
-            if om is not None:
-                if om >= 0.25:
-                    scores.append(100)
-                elif om >= 0.15:
-                    scores.append(75)
-                elif om >= 0.08:
-                    scores.append(50)
-                elif om > 0:
-                    scores.append(25)
-                else:
-                    scores.append(0)
+            if om >= 0.25:
+                scores.append(100)
+            elif om >= 0.15:
+                scores.append(75)
+            elif om >= 0.08:
+                scores.append(50)
+            elif om > 0:
+                scores.append(25)
+            else:
+                scores.append(0)
 
         if not scores:
             return 50.0, "Insufficient profitability data"

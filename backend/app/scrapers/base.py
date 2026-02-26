@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from app.data.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, get_breaker_registry
+from app.data.circuit_breaker import CircuitBreaker, get_breaker_registry
 
 logger = logging.getLogger(__name__)
 

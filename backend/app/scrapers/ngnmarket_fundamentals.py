@@ -150,7 +150,7 @@ class NgnmarketFundamentalsScraper:
         start = time.monotonic()
         try:
             # Map symbol to ngnmarket format
-            mapped = self._alias_registry.resolve(symbol, DataProvider.NGNMARKET)
+            mapped = self._alias_registry.get_provider_symbol(symbol, DataProvider.NGNMARKET)
             url = self.BASE_URL.format(symbol=mapped)
 
             response = await http_fetch(
