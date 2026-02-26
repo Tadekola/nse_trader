@@ -66,6 +66,7 @@ from app.services.signal_lifecycle import (
     LifecycleConfig,
     get_lifecycle_manager
 )
+from app.services.growth_scorer import get_growth_scorer, GrowthProfile
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,10 @@ class RecommendationService:
         # Initialize signal lifecycle manager
         self.lifecycle_manager = get_lifecycle_manager()
         
+        # Initialize growth scorer for fundamental enrichment
+        self.growth_scorer = get_growth_scorer()
+        self._growth_profiles_loaded = False
+        
         # Cache
         self._cache: Dict[str, tuple[Any, datetime]] = {}
         self._cache_ttl = timedelta(minutes=15)
@@ -129,6 +134,9 @@ class RecommendationService:
         cached = self._get_from_cache(cache_key)
         if cached:
             return cached
+        
+        # Pre-load growth profiles (once, cached)
+        await self._ensure_growth_profiles()
         
         # Get validated data (with fast-fail fallback)
         try:
@@ -221,6 +229,16 @@ class RecommendationService:
         result['data_confidence'] = confidence_score.to_dict()
         result['suppression_reason'] = None  # Not suppressed
         result['status'] = 'ACTIVE'
+        
+        # Attach growth potential from cached profile
+        gp = self.growth_scorer.get_cached_profile(symbol)
+        if gp:
+            result['growth_potential'] = gp.growth_potential
+            result['growth_factors'] = gp.growth_factors
+            result['growth_risk_factors'] = gp.risk_factors
+            result['sector_macro_alignment'] = gp.sector_macro_alignment
+        else:
+            result['growth_potential'] = None
         
         # Calculate probabilistic bias signal
         signals_for_bias = [
@@ -353,6 +371,16 @@ class RecommendationService:
         result['trade_date'] = trade_date
         result['price_source'] = 'historical_ohlcv'
 
+        # Attach growth potential from cached profile
+        gp = self.growth_scorer.get_cached_profile(symbol)
+        if gp:
+            result['growth_potential'] = gp.growth_potential
+            result['growth_factors'] = gp.growth_factors
+            result['growth_risk_factors'] = gp.risk_factors
+            result['sector_macro_alignment'] = gp.sector_macro_alignment
+        else:
+            result['growth_potential'] = None
+
         # Staleness warning: flag if price data is >2 trading days old
         from datetime import date as date_type, timedelta
         try:
@@ -420,6 +448,17 @@ class RecommendationService:
 
         return _sanitize_numpy(result)
 
+    async def _ensure_growth_profiles(self):
+        """Load growth profiles once per service lifetime (lazy)."""
+        if not self._growth_profiles_loaded:
+            try:
+                await self.growth_scorer.load_all_profiles()
+                self._growth_profiles_loaded = True
+                logger.info("Growth profiles loaded for recommendation enrichment")
+            except Exception as e:
+                logger.warning("Could not load growth profiles: %s", e)
+                self._growth_profiles_loaded = True  # don't retry every call
+
     async def get_top_recommendations(
         self,
         horizon: TimeHorizon = TimeHorizon.SWING,
@@ -434,12 +473,19 @@ class RecommendationService:
         Optimisation: only fetch live prices for symbols that have
         historical OHLCV data, skipping the slow network round-trip
         for symbols that would be rejected by _build_price_dataframe.
+        
+        Growth integration: loads fundamental growth profiles from DB
+        and uses them to enrich recommendations with quality, growth,
+        and sector alignment signals.
         """
         from app.data.historical.storage import get_historical_storage
         from app.core.config import get_settings
 
         settings = get_settings()
         storage = get_historical_storage()
+
+        # Pre-load growth profiles (once, cached)
+        await self._ensure_growth_profiles()
 
         # Pre-filter: only symbols with enough historical data
         all_metadata = storage.get_all_metadata()
@@ -494,8 +540,20 @@ class RecommendationService:
                 logger.warning(f"Error generating rec for {stock['symbol']}: {e}")
                 continue
         
-        # Sort by confidence
-        recommendations.sort(key=lambda x: x.get('confidence', 0), reverse=True)
+        # Growth-adjusted ranking: blend signal confidence with growth potential
+        # Long-term → growth matters more; short-term → technicals dominate
+        growth_weight = {
+            TimeHorizon.SHORT_TERM: 0.10,
+            TimeHorizon.SWING: 0.25,
+            TimeHorizon.LONG_TERM: 0.40,
+        }.get(horizon, 0.25)
+
+        def _sort_key(rec):
+            conf = rec.get('confidence', 0) or 0
+            gp = rec.get('growth_potential', 50) or 50
+            return conf * (1 - growth_weight) + gp * growth_weight
+
+        recommendations.sort(key=_sort_key, reverse=True)
         
         return recommendations[:limit]
 
@@ -822,14 +880,42 @@ class RecommendationService:
             logger.error("Error loading ASI data: %s", e)
             return None
     
-    def _extract_fundamentals(self, stock_data: Dict) -> Dict[str, Any]:
-        """Extract fundamental data from stock data."""
-        return {
+    def _extract_fundamentals(
+        self, stock_data: Dict, growth_profile: Optional[GrowthProfile] = None
+    ) -> Dict[str, Any]:
+        """Extract fundamental data, enriched with growth profile when available."""
+        base = {
             'pe_ratio': stock_data.get('pe_ratio'),
             'eps': stock_data.get('eps'),
             'dividend_yield': stock_data.get('dividend_yield'),
-            'market_cap': stock_data.get('market_cap')
+            'market_cap': stock_data.get('market_cap'),
         }
+
+        if growth_profile is None:
+            growth_profile = self.growth_scorer.get_cached_profile(
+                stock_data.get('symbol', '')
+            )
+
+        if growth_profile is not None:
+            base.update({
+                'revenue_growth': growth_profile.revenue_growth,
+                'earnings_growth': growth_profile.earnings_growth,
+                'roe': growth_profile.roe,
+                'op_margin': growth_profile.op_margin,
+                'net_margin': growth_profile.net_margin,
+                'debt_to_equity': growth_profile.debt_to_equity,
+                'fcf': growth_profile.fcf,
+                'earnings_stability': growth_profile.earnings_stability,
+                'quality_score': growth_profile.quality_score,
+                'sector': growth_profile.sector,
+                'sector_macro_alignment': growth_profile.sector_macro_alignment,
+                'growth_potential': growth_profile.growth_potential,
+            })
+            # Override P/E from growth profile if registry didn't have it
+            if base['pe_ratio'] is None and growth_profile.pe_ratio is not None:
+                base['pe_ratio'] = growth_profile.pe_ratio
+
+        return base
     
     def _get_session_regime(self) -> Optional[SessionRegimeAnalysis]:
         """

@@ -393,62 +393,212 @@ class RecommendationEngine:
     def _analyze_fundamentals(
         self, data: Optional[Dict], horizon: TimeHorizon
     ) -> List[Signal]:
-        """Analyze fundamental data and convert to signals."""
+        """
+        Analyze fundamental data and convert to signals.
+
+        When enriched with growth profile data (revenue_growth, earnings_growth,
+        quality_score, sector_macro_alignment, etc.), produces comprehensive
+        fundamental signals.  Falls back to basic P/E / dividend / ROE analysis
+        when only market-data fields are available.
+        """
         if data is None:
             return []
         
         signals = []
         
-        # P/E Ratio analysis
+        # ── Revenue growth ──────────────────────────────────────────────
+        rev_growth = data.get('revenue_growth')
+        if rev_growth is not None:
+            if rev_growth > 0.25:
+                signals.append(Signal(
+                    name='revenue_growth', type='fundamental',
+                    direction='bullish', strength=0.8, confidence=0.8,
+                    plain_english=f'Strong revenue growth of {rev_growth:.0%} YoY',
+                    raw_value=rev_growth))
+            elif rev_growth > 0.10:
+                signals.append(Signal(
+                    name='revenue_growth', type='fundamental',
+                    direction='bullish', strength=0.5, confidence=0.7,
+                    plain_english=f'Solid revenue growth of {rev_growth:.0%} YoY',
+                    raw_value=rev_growth))
+            elif rev_growth < -0.05:
+                signals.append(Signal(
+                    name='revenue_growth', type='fundamental',
+                    direction='bearish', strength=-0.6, confidence=0.7,
+                    plain_english=f'Revenue declining {rev_growth:.0%} YoY',
+                    raw_value=rev_growth))
+
+        # ── Earnings growth ─────────────────────────────────────────────
+        earn_growth = data.get('earnings_growth')
+        if earn_growth is not None:
+            if earn_growth > 0.30:
+                signals.append(Signal(
+                    name='earnings_growth', type='fundamental',
+                    direction='bullish', strength=0.85, confidence=0.8,
+                    plain_english=f'Rapid earnings growth of {earn_growth:.0%} YoY',
+                    raw_value=earn_growth))
+            elif earn_growth > 0.10:
+                signals.append(Signal(
+                    name='earnings_growth', type='fundamental',
+                    direction='bullish', strength=0.5, confidence=0.7,
+                    plain_english=f'Healthy earnings growth of {earn_growth:.0%} YoY',
+                    raw_value=earn_growth))
+            elif earn_growth < -0.10:
+                signals.append(Signal(
+                    name='earnings_growth', type='fundamental',
+                    direction='bearish', strength=-0.65, confidence=0.7,
+                    plain_english=f'Earnings declining {earn_growth:.0%} YoY',
+                    raw_value=earn_growth))
+
+        # ── ROE (Return on Equity) ──────────────────────────────────────
+        roe = data.get('roe')
+        if roe is not None:
+            # roe comes as fraction from growth profile, or percentage from registry
+            roe_frac = roe if roe < 1 else roe / 100
+            if roe_frac > 0.20:
+                signals.append(Signal(
+                    name='roe', type='fundamental',
+                    direction='bullish', strength=0.7, confidence=0.8,
+                    plain_english=f'Excellent ROE of {roe_frac:.0%} — efficient capital use',
+                    raw_value=roe_frac))
+            elif roe_frac > 0.12:
+                signals.append(Signal(
+                    name='roe', type='fundamental',
+                    direction='bullish', strength=0.45, confidence=0.7,
+                    plain_english=f'Good ROE of {roe_frac:.0%}',
+                    raw_value=roe_frac))
+            elif roe_frac < 0.03 and roe_frac >= 0:
+                signals.append(Signal(
+                    name='roe', type='fundamental',
+                    direction='bearish', strength=-0.3, confidence=0.6,
+                    plain_english=f'Weak ROE of {roe_frac:.0%} — poor capital efficiency',
+                    raw_value=roe_frac))
+
+        # ── Operating margin ────────────────────────────────────────────
+        op_margin = data.get('op_margin')
+        if op_margin is not None:
+            if op_margin > 0.25:
+                signals.append(Signal(
+                    name='op_margin', type='fundamental',
+                    direction='bullish', strength=0.55, confidence=0.75,
+                    plain_english=f'Strong operating margin of {op_margin:.0%} — pricing power',
+                    raw_value=op_margin))
+            elif op_margin < 0.05 and op_margin >= 0:
+                signals.append(Signal(
+                    name='op_margin', type='fundamental',
+                    direction='bearish', strength=-0.35, confidence=0.65,
+                    plain_english=f'Thin operating margin of {op_margin:.0%}',
+                    raw_value=op_margin))
+
+        # ── Balance sheet strength (Debt/Equity) ────────────────────────
+        de = data.get('debt_to_equity')
+        if de is not None:
+            if de < 0.3:
+                signals.append(Signal(
+                    name='balance_sheet', type='fundamental',
+                    direction='bullish', strength=0.45, confidence=0.7,
+                    plain_english=f'Conservative leverage (D/E {de:.2f})',
+                    raw_value=de))
+            elif de > 2.5:
+                signals.append(Signal(
+                    name='balance_sheet', type='fundamental',
+                    direction='bearish', strength=-0.5, confidence=0.7,
+                    plain_english=f'High leverage concern (D/E {de:.1f})',
+                    raw_value=de))
+
+        # ── Cash quality (FCF) ──────────────────────────────────────────
+        fcf = data.get('fcf')
+        if fcf is not None:
+            if fcf > 0:
+                signals.append(Signal(
+                    name='cash_quality', type='fundamental',
+                    direction='bullish', strength=0.4, confidence=0.75,
+                    plain_english=f'Positive free cash flow (₦{fcf:,.0f})',
+                    raw_value=fcf))
+            elif fcf < 0:
+                signals.append(Signal(
+                    name='cash_quality', type='fundamental',
+                    direction='bearish', strength=-0.35, confidence=0.65,
+                    plain_english='Negative free cash flow — cash burn',
+                    raw_value=fcf))
+
+        # ── Earnings stability ──────────────────────────────────────────
+        stability = data.get('earnings_stability')
+        if stability is not None:
+            if stability > 0.80:
+                signals.append(Signal(
+                    name='earnings_stability', type='fundamental',
+                    direction='bullish', strength=0.4, confidence=0.7,
+                    plain_english='Highly stable earnings across periods',
+                    raw_value=stability))
+            elif stability < 0.30:
+                signals.append(Signal(
+                    name='earnings_stability', type='fundamental',
+                    direction='bearish', strength=-0.3, confidence=0.6,
+                    plain_english='Volatile earnings — unpredictable profitability',
+                    raw_value=stability))
+
+        # ── Quality score ───────────────────────────────────────────────
+        quality = data.get('quality_score')
+        if quality is not None:
+            if quality >= 60:
+                signals.append(Signal(
+                    name='quality_score', type='fundamental',
+                    direction='bullish', strength=0.6, confidence=0.8,
+                    plain_english=f'High business quality (score {quality:.0f}/100)',
+                    raw_value=quality))
+            elif quality < 30:
+                signals.append(Signal(
+                    name='quality_score', type='fundamental',
+                    direction='bearish', strength=-0.5, confidence=0.7,
+                    plain_english=f'Low business quality (score {quality:.0f}/100)',
+                    raw_value=quality))
+
+        # ── Sector macro alignment (Nigeria growth thesis) ──────────────
+        sector_align = data.get('sector_macro_alignment')
+        if sector_align is not None and sector_align >= 0.75:
+            sector = data.get('sector', 'sector')
+            signals.append(Signal(
+                name='sector_alignment', type='fundamental',
+                direction='bullish', strength=0.5 * sector_align,
+                confidence=0.75,
+                plain_english=f'{sector} sector well-positioned for Nigeria economic growth',
+                raw_value=sector_align))
+
+        # ── Growth potential composite ──────────────────────────────────
+        growth_potential = data.get('growth_potential')
+        if growth_potential is not None and growth_potential >= 60:
+            signals.append(Signal(
+                name='growth_potential', type='fundamental',
+                direction='bullish', strength=0.7, confidence=0.75,
+                plain_english=f'High growth potential score ({growth_potential:.0f}/100)',
+                raw_value=growth_potential))
+
+        # ── P/E Ratio (fallback if no growth data) ──────────────────────
         pe = data.get('pe_ratio')
-        if pe is not None:
+        if pe is not None and rev_growth is None:
+            # Only use simple P/E when no growth data to compute PEG
             if pe < 5:
                 signals.append(Signal(
-                    name='pe_ratio',
-                    type='fundamental',
-                    direction='bullish',
-                    strength=0.7,
-                    confidence=0.7,
+                    name='pe_ratio', type='fundamental',
+                    direction='bullish', strength=0.7, confidence=0.7,
                     plain_english=f'Low P/E ratio of {pe:.1f} suggests undervaluation',
-                    raw_value=pe
-                ))
+                    raw_value=pe))
             elif pe > 20:
                 signals.append(Signal(
-                    name='pe_ratio',
-                    type='fundamental',
-                    direction='bearish',
-                    strength=-0.5,
-                    confidence=0.6,
+                    name='pe_ratio', type='fundamental',
+                    direction='bearish', strength=-0.5, confidence=0.6,
                     plain_english=f'High P/E ratio of {pe:.1f} suggests overvaluation',
-                    raw_value=pe
-                ))
-        
-        # Dividend yield analysis
+                    raw_value=pe))
+
+        # ── Dividend yield ──────────────────────────────────────────────
         div_yield = data.get('dividend_yield')
         if div_yield is not None and div_yield > 5:
             signals.append(Signal(
-                name='dividend_yield',
-                type='fundamental',
-                direction='bullish',
-                strength=0.5,
-                confidence=0.8,
+                name='dividend_yield', type='fundamental',
+                direction='bullish', strength=0.5, confidence=0.8,
                 plain_english=f'Attractive dividend yield of {div_yield:.1f}%',
-                raw_value=div_yield
-            ))
-        
-        # ROE analysis
-        roe = data.get('roe')
-        if roe is not None:
-            if roe > 15:
-                signals.append(Signal(
-                    name='roe',
-                    type='fundamental',
-                    direction='bullish',
-                    strength=0.6,
-                    confidence=0.7,
-                    plain_english=f'Strong ROE of {roe:.1f}% indicates efficient management',
-                    raw_value=roe
-                ))
+                raw_value=div_yield))
         
         return signals
     
