@@ -7,6 +7,7 @@ Provides recommendation generation and management with:
 - Market regime integration (adjusts confidence based on regime compatibility)
 - Signal lifecycle governance (TTL enforcement, NO_TRADE state)
 """
+import asyncio
 import logging
 import numpy as np
 from typing import Optional, Dict, List, Any
@@ -129,9 +130,12 @@ class RecommendationService:
         if cached:
             return cached
         
-        # Get validated data (with fallback to direct market data)
+        # Get validated data (with fast-fail fallback)
         try:
-            validation_result = await self.validation_service.fetch_validated([symbol])
+            validation_result = await asyncio.wait_for(
+                self.validation_service.fetch_validated([symbol]),
+                timeout=15.0
+            )
             validated_snapshot = validation_result.snapshots.get(symbol)
             
             if validated_snapshot:
@@ -140,19 +144,36 @@ class RecommendationService:
                 # Enrich snapshot to stock_data dict
                 stock_data = self._enrich_snapshot_to_dict(validated_snapshot.snapshot)
             else:
-                # Validation returned no snapshot — fallback to direct fetch
+                # Validation returned no snapshot — try direct fetch with timeout
                 logger.info(f"Validation empty for {symbol}, falling back to direct fetch")
-                stock_result = await self.market_data.get_stock_async(symbol)
+                try:
+                    stock_result = await asyncio.wait_for(
+                        self.market_data.get_stock_async(symbol),
+                        timeout=10.0
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(f"Fallback fetch timed out for {symbol}")
+                    return None
                 if not stock_result.success:
                     logger.warning(f"Failed to get data for {symbol}")
                     return None
                 stock_data = stock_result.data
                 confidence_score = self._calculate_confidence_score(symbol, stock_data, stock_result)
             
+        except asyncio.TimeoutError:
+            logger.warning(f"Validation timed out for {symbol}")
+            return None
         except Exception as e:
             logger.error(f"Error fetching validated data for {symbol}: {e}")
             # Fallback to direct market data fetch if validation fails
-            stock_result = await self.market_data.get_stock_async(symbol)
+            try:
+                stock_result = await asyncio.wait_for(
+                    self.market_data.get_stock_async(symbol),
+                    timeout=10.0
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"Fallback fetch timed out for {symbol}")
+                return None
             if not stock_result.success:
                 return None
             stock_data = stock_result.data
