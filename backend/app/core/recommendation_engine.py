@@ -208,6 +208,13 @@ class RecommendationEngine:
         # Determine action
         action = self._determine_action(adjusted_score, liquidity_score, risk_metrics.risk_level)
         
+        # Confidence gate: demote directional calls when confidence is insufficient
+        MIN_CONFIDENCE_FOR_DIRECTION = 50  # percent
+        if confidence < MIN_CONFIDENCE_FOR_DIRECTION and action not in (
+            RecommendationAction.HOLD, RecommendationAction.AVOID
+        ):
+            action = RecommendationAction.HOLD
+        
         # Calculate entry/exit points
         entry_exit = self._calculate_entry_exit(
             current_price, price_data, risk_metrics, action
@@ -622,7 +629,7 @@ class RecommendationEngine:
             else:
                 weight = 0.1  # Default weight for unknown types
             
-            weighted_score += signal.strength * weight * signal.confidence
+            weighted_score += signal.strength * weight
             total_weight += weight
             total_confidence += signal.confidence
         
@@ -631,17 +638,45 @@ class RecommendationEngine:
         else:
             normalized_score = 0.0
         
-        # Confidence based on signal agreement
-        bullish = sum(1 for s in signals if s.strength > 0.2)
-        bearish = sum(1 for s in signals if s.strength < -0.2)
-        neutral = len(signals) - bullish - bearish
+        # Confidence based on directional signal agreement
+        # (neutral signals excluded so they don't dilute confidence)
+        bullish = sum(1 for s in signals if s.strength > 0.1)
+        bearish = sum(1 for s in signals if s.strength < -0.1)
+        directional = bullish + bearish
         
-        max_agreement = max(bullish, bearish, neutral)
-        agreement_confidence = max_agreement / len(signals) if signals else 0
+        if directional > 0:
+            # Agreement among directional signals only
+            agreement_confidence = max(bullish, bearish) / directional
+        else:
+            agreement_confidence = 0.5  # all neutral → moderate confidence
         
-        # Combine with individual signal confidence
+        # Directional dominance bonus: reward when majority is clearly stronger
+        if directional >= 2:
+            dominant = max(bullish, bearish)
+            minority = min(bullish, bearish)
+            dominance_ratio = (dominant - minority) / directional
+            dominance_bonus = dominance_ratio * 0.15  # up to +15%
+        else:
+            dominance_bonus = 0.0
+        
+        # Average individual signal confidence
         avg_signal_confidence = total_confidence / len(signals) if signals else 0
-        final_confidence = (agreement_confidence * 0.6 + avg_signal_confidence * 0.4) * 100
+        
+        # Score-magnitude floor: strong scores deserve minimum confidence
+        score_magnitude = abs(normalized_score)
+        magnitude_floor = min(0.55, score_magnitude * 1.5)  # e.g. score=0.30 → floor=45%
+        
+        # Combine: agreement (50%) + signal quality (30%) + dominance (20%)
+        # dominance_bonus ranges 0→0.15, normalize to 0→1 before weighting
+        dominance_component = (dominance_bonus / 0.15) if dominance_bonus > 0 else 0.0
+        raw_confidence = (
+            agreement_confidence * 0.50
+            + avg_signal_confidence * 0.30
+            + dominance_component * 0.20
+        ) * 100
+        
+        # Apply magnitude floor
+        final_confidence = max(raw_confidence, magnitude_floor * 100)
         
         return normalized_score, min(95, final_confidence)
     
@@ -649,25 +684,33 @@ class RecommendationEngine:
         self, raw_score: float, regime: Optional[RegimeAnalysis],
         risk: RiskMetrics, liquidity: float
     ) -> float:
-        """Apply regime, risk, and liquidity adjustments to score."""
+        """Apply regime, risk, and liquidity adjustments to score.
+        
+        Uses additive penalties instead of multiplicative to avoid
+        compounding compression of directional signals.
+        """
         adjusted = raw_score
         
-        # Regime adjustment
+        # Regime adjustment (still multiplicative — regime is a market-wide factor)
         if regime:
             adjusted = self.regime_detector.get_regime_adjustment(adjusted, regime.regime)
         
-        # Risk adjustment (penalize high-risk stocks)
+        # Risk adjustment: additive penalty toward zero
+        # (kept small — regime multiplier already handles market-wide risk)
+        sign = 1.0 if adjusted >= 0 else -1.0
+        mag = abs(adjusted)
         if risk.risk_level == RiskLevel.VERY_HIGH:
-            adjusted *= 0.7
+            mag = max(0.0, mag - 0.05)
         elif risk.risk_level == RiskLevel.HIGH:
-            adjusted *= 0.85
+            mag = max(0.0, mag - 0.02)
         
-        # Liquidity adjustment (penalize illiquid stocks)
+        # Liquidity adjustment: additive penalty toward zero
         if liquidity < 0.3:
-            adjusted *= 0.6
+            mag = max(0.0, mag - 0.08)
         elif liquidity < 0.5:
-            adjusted *= 0.8
+            mag = max(0.0, mag - 0.03)
         
+        adjusted = sign * mag
         return max(-1.0, min(1.0, adjusted))
     
     def _determine_action(
@@ -675,45 +718,42 @@ class RecommendationEngine:
     ) -> RecommendationAction:
         """Determine final recommendation action.
         
-        Thresholds calibrated to actual score distribution (~-0.15 to +0.16
-        for Nigerian equities with 150 sessions of history). Scores are
-        compressed by multi-layer normalization and risk/regime adjustments.
+        Thresholds calibrated for decompressed score range (~-0.50 to +0.50
+        for Nigerian equities). Wider bands reduce false signals.
         """
         
         # Very low liquidity = AVOID regardless of score
         if liquidity < 0.2:
             return RecommendationAction.AVOID
         
-        # Very high risk reduces bullish recommendations
-        if risk_level == RiskLevel.VERY_HIGH:
-            if score > 0.08:
-                return RecommendationAction.BUY  # Cap at BUY, not STRONG_BUY
-            elif score > 0.00:
-                return RecommendationAction.HOLD
-            elif score > -0.08:
-                return RecommendationAction.HOLD
-            elif score > -0.12:
-                return RecommendationAction.SELL
-            else:
-                return RecommendationAction.STRONG_SELL
-        
         # Normal action mapping
-        if score >= 0.12:
-            return RecommendationAction.STRONG_BUY
-        elif score >= 0.04:
-            return RecommendationAction.BUY
-        elif score >= -0.04:
-            return RecommendationAction.HOLD
-        elif score >= -0.12:
-            return RecommendationAction.SELL
+        # (Risk/liquidity penalties already applied in _apply_adjustments)
+        if score >= 0.30:
+            action = RecommendationAction.STRONG_BUY
+        elif score >= 0.10:
+            action = RecommendationAction.BUY
+        elif score >= -0.10:
+            action = RecommendationAction.HOLD
+        elif score >= -0.30:
+            action = RecommendationAction.SELL
         else:
-            return RecommendationAction.STRONG_SELL
+            action = RecommendationAction.STRONG_SELL
+        
+        # Cap: very high risk stocks cannot get STRONG_BUY
+        if risk_level == RiskLevel.VERY_HIGH and action == RecommendationAction.STRONG_BUY:
+            action = RecommendationAction.BUY
+        
+        return action
     
     def _calculate_entry_exit(
         self, price: float, df: pd.DataFrame,
         risk: RiskMetrics, action: RecommendationAction
     ) -> Optional[EntryExitPoints]:
-        """Calculate entry and exit points."""
+        """Calculate entry and exit points using per-stock technicals.
+
+        Targets are derived from Bollinger bands, recent swing extremes,
+        and ATR extensions — giving a *dynamic* R:R that varies per stock.
+        """
         if action in [RecommendationAction.AVOID, RecommendationAction.HOLD]:
             return None
         
@@ -722,32 +762,68 @@ class RecommendationEngine:
         atr_series = calculate_atr(df)
         atr = float(atr_series.iloc[-1]) if len(atr_series) > 0 else price * 0.03
         
+        # Bollinger bands (20-day, 2σ) for target anchoring
+        close = df["Close"]
+        sma20 = float(close.rolling(20).mean().iloc[-1]) if len(close) >= 20 else price
+        std20 = float(close.rolling(20).std().iloc[-1]) if len(close) >= 20 else atr
+        bb_upper = sma20 + 2 * std20
+        bb_lower = sma20 - 2 * std20
+
+        # Recent swing extremes (last 20 bars)
+        recent = df.tail(20)
+        recent_high = float(recent["High"].max())
+        recent_low = float(recent["Low"].min())
+        
         if action in [RecommendationAction.BUY, RecommendationAction.STRONG_BUY]:
             # Buy setup
             entry_zone_low = price * 0.98
             entry_zone_high = price * 1.01
             stop_loss = price - (2 * atr)
             stop_loss_pct = ((price - stop_loss) / price) * 100
-            
-            # Targets based on risk-reward
             risk_amount = price - stop_loss
-            target_1 = price + (risk_amount * 1.5)
-            target_2 = price + (risk_amount * 2.5)
-            target_3 = price + (risk_amount * 4.0)
             
-            rr_ratio = 1.5
+            # Dynamic targets from technical levels
+            # T1: upper Bollinger or recent high (whichever is closer above price)
+            t1_candidates = [v for v in [bb_upper, recent_high] if v > price]
+            target_1 = min(t1_candidates) if t1_candidates else price + 1.5 * risk_amount
+            # Ensure T1 offers at least 1:1 R:R
+            if (target_1 - price) < risk_amount:
+                target_1 = price + risk_amount
+            
+            # T2: whichever technical level is further, or ATR extension
+            target_2 = max(bb_upper, recent_high, price + 2.5 * atr)
+            if target_2 <= target_1:
+                target_2 = target_1 + risk_amount
+            
+            # T3: ATR-based extension beyond T2
+            target_3 = target_2 + 2 * atr
+            
         else:
             # Sell setup (exit points for existing positions)
             entry_zone_low = price * 0.99
             entry_zone_high = price * 1.02
-            stop_loss = price + (2 * atr)  # Stop above for shorts
+            stop_loss = price + (2 * atr)
             stop_loss_pct = ((stop_loss - price) / price) * 100
+            risk_amount = stop_loss - price
             
-            target_1 = price * 0.95
-            target_2 = price * 0.90
-            target_3 = price * 0.85
+            # Dynamic targets from technical levels
+            t1_candidates = [v for v in [bb_lower, recent_low] if v < price]
+            target_1 = max(t1_candidates) if t1_candidates else price - 1.5 * risk_amount
+            if (price - target_1) < risk_amount:
+                target_1 = price - risk_amount
             
-            rr_ratio = 1.5
+            target_2 = min(bb_lower, recent_low, price - 2.5 * atr)
+            if target_2 >= target_1:
+                target_2 = target_1 - risk_amount
+            
+            target_3 = target_2 - 2 * atr
+        
+        # Compute R:R dynamically from actual levels
+        if risk_amount > 0:
+            reward = abs(target_1 - price)
+            rr_ratio = reward / risk_amount
+        else:
+            rr_ratio = 0.0
         
         return EntryExitPoints(
             entry_price=round(price, 2),

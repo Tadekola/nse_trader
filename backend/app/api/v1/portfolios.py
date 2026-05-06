@@ -36,6 +36,7 @@ from app.services.performance import PerformanceEngine
 from app.services.decomposition import DecompositionEngine
 from app.services.summary import SummaryService, DataFreshness
 from app.services.timeseries import TimeseriesService
+from app.services.portfolio_risk import PortfolioRiskManager
 from app.data.macro.fx_provider import FxRateService
 from app.data.macro.cpi_provider import CpiService
 
@@ -47,6 +48,7 @@ perf_engine = PerformanceEngine()
 decomp_engine = DecompositionEngine()
 summary_svc = SummaryService()
 timeseries_svc = TimeseriesService()
+risk_mgr = PortfolioRiskManager()
 
 VALID_REPORTING_MODES = {"NGN", "USD", "REAL_NGN"}
 
@@ -834,3 +836,323 @@ async def get_timeseries(
     )
 
     return result.to_dict()
+
+
+# ── GET /portfolios/{id}/risk-report ────────────────────────────────────────
+
+@router.get("/{portfolio_id}/risk-report")
+async def get_risk_report(
+    portfolio_id: int,
+    as_of: Optional[str] = Query(None, description="As-of date YYYY-MM-DD"),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """
+    Portfolio-level risk report: concentration, drawdown, sector weights, HHI.
+
+    Returns risk flags when limits are breached (position >10%, sector >35%,
+    drawdown >8%, low cash reserve).
+    """
+    from app.data.sources.ngx_stocks import NGXStockRegistry
+
+    # Verify portfolio
+    p = (await session.execute(
+        select(Portfolio).where(Portfolio.id == portfolio_id)
+    )).scalar_one_or_none()
+    if not p:
+        raise HTTPException(404, f"Portfolio {portfolio_id} not found")
+
+    as_of_date = date.fromisoformat(as_of) if as_of else date.today()
+
+    # Load transactions
+    tx_stmt = select(PortfolioTransaction).where(
+        PortfolioTransaction.portfolio_id == portfolio_id
+    ).order_by(PortfolioTransaction.ts.asc())
+    tx_rows = (await session.execute(tx_stmt)).scalars().all()
+    txs = [_row_to_dict(r) for r in tx_rows]
+    for tx in txs:
+        if isinstance(tx["ts"], str):
+            tx["ts"] = date.fromisoformat(tx["ts"])
+
+    snapshot = portfolio_svc.compute_holdings(txs, as_of=as_of_date)
+
+    # Get prices for valuation
+    symbols = list(snapshot.holdings.keys())
+    prices: Dict[str, float] = {}
+    for sym in symbols:
+        adj_stmt = select(AdjustedPrice).where(
+            AdjustedPrice.symbol == sym,
+            AdjustedPrice.ts <= as_of_date,
+        ).order_by(AdjustedPrice.ts.desc()).limit(1)
+        row = (await session.execute(adj_stmt)).scalar_one_or_none()
+        if row:
+            prices[sym] = row.adj_close
+        else:
+            ohlcv_stmt = select(OHLCVPrice).where(
+                OHLCVPrice.symbol == sym,
+                OHLCVPrice.ts <= as_of_date,
+            ).order_by(OHLCVPrice.ts.desc()).limit(1)
+            orow = (await session.execute(ohlcv_stmt)).scalar_one_or_none()
+            if orow:
+                prices[sym] = orow.close
+
+    valuation = portfolio_svc.compute_valuation(snapshot, prices)
+
+    # Sector lookup
+    registry = NGXStockRegistry()
+    sector_lookup: Dict[str, str] = {}
+    for sym in symbols:
+        stock_info = registry.get_stock(sym)
+        if stock_info and "sector" in stock_info:
+            sec = stock_info["sector"]
+            sector_lookup[sym] = sec.value if hasattr(sec, "value") else str(sec)
+        else:
+            sector_lookup[sym] = "Unknown"
+
+    # Peak value (simple: scan daily values for max)
+    peak_value = valuation.total_value_ngn
+    if txs:
+        first_tx_date = min(tx["ts"] for tx in txs)
+        price_series_all: Dict[str, Dict[date, float]] = {}
+        for sym in symbols:
+            adj_stmt = select(AdjustedPrice).where(
+                AdjustedPrice.symbol == sym,
+                AdjustedPrice.ts >= first_tx_date,
+                AdjustedPrice.ts <= as_of_date,
+            ).order_by(AdjustedPrice.ts.asc())
+            adj_rows = (await session.execute(adj_stmt)).scalars().all()
+            if adj_rows:
+                price_series_all[sym] = {r.ts: r.adj_close for r in adj_rows}
+            else:
+                ohlcv_stmt = select(OHLCVPrice).where(
+                    OHLCVPrice.symbol == sym,
+                    OHLCVPrice.ts >= first_tx_date,
+                    OHLCVPrice.ts <= as_of_date,
+                ).order_by(OHLCVPrice.ts.asc())
+                ohlcv_rows = (await session.execute(ohlcv_stmt)).scalars().all()
+                if ohlcv_rows:
+                    price_series_all[sym] = {r.ts: r.close for r in ohlcv_rows}
+
+        daily_vals = portfolio_svc.compute_daily_values(
+            txs, price_series_all, first_tx_date, as_of_date
+        )
+        if daily_vals:
+            peak_value = max(dv["value_ngn"] for dv in daily_vals)
+
+    report = risk_mgr.compute_risk_report(
+        positions=valuation.positions,
+        cash_ngn=valuation.cash_ngn,
+        portfolio_value=valuation.total_value_ngn,
+        peak_value=peak_value,
+        sector_lookup=sector_lookup,
+    )
+    return report.to_dict()
+
+
+# ── GET /portfolios/{id}/position-size ──────────────────────────────────────
+
+class PositionSizeRequest(BaseModel):
+    symbol: str
+    action: str = Field(default="BUY", description="BUY or STRONG_BUY")
+    confidence: float = Field(..., ge=0, le=100)
+    current_price: float = Field(..., gt=0)
+    risk_level: str = Field(default="moderate")
+    sector: Optional[str] = None
+    liquidity_tier: str = Field(default="medium")
+    portfolio_drawdown_pct: float = Field(default=0.0, ge=0)
+
+
+@router.post("/{portfolio_id}/position-size")
+async def compute_position_size(
+    portfolio_id: int,
+    body: PositionSizeRequest,
+    session: AsyncSession = Depends(get_async_session),
+):
+    """
+    Compute position sizing for a potential trade, respecting portfolio limits.
+
+    Takes a recommendation's key fields (symbol, action, confidence, price,
+    risk_level) and returns how many shares to buy given the portfolio's
+    current state and risk constraints.
+    """
+    from app.data.sources.ngx_stocks import NGXStockRegistry
+
+    # Verify portfolio
+    p = (await session.execute(
+        select(Portfolio).where(Portfolio.id == portfolio_id)
+    )).scalar_one_or_none()
+    if not p:
+        raise HTTPException(404, f"Portfolio {portfolio_id} not found")
+
+    # Load transactions + compute holdings
+    tx_stmt = select(PortfolioTransaction).where(
+        PortfolioTransaction.portfolio_id == portfolio_id
+    ).order_by(PortfolioTransaction.ts.asc())
+    tx_rows = (await session.execute(tx_stmt)).scalars().all()
+    txs = [_row_to_dict(r) for r in tx_rows]
+    for tx in txs:
+        if isinstance(tx["ts"], str):
+            tx["ts"] = date.fromisoformat(tx["ts"])
+
+    snapshot = portfolio_svc.compute_holdings(txs)
+
+    # Get prices for valuation
+    symbols = list(snapshot.holdings.keys())
+    prices: Dict[str, float] = {}
+    for sym in symbols:
+        ohlcv_stmt = select(OHLCVPrice).where(
+            OHLCVPrice.symbol == sym,
+        ).order_by(OHLCVPrice.ts.desc()).limit(1)
+        orow = (await session.execute(ohlcv_stmt)).scalar_one_or_none()
+        if orow:
+            prices[sym] = orow.close
+
+    valuation = portfolio_svc.compute_valuation(snapshot, prices)
+
+    # Sector weights
+    registry = NGXStockRegistry()
+    sector_values: Dict[str, float] = {}
+    for pos in valuation.positions:
+        sym = pos["symbol"]
+        stock_info = registry.get_stock(sym)
+        if stock_info and "sector" in stock_info:
+            sec = stock_info["sector"]
+            sec_name = sec.value if hasattr(sec, "value") else str(sec)
+        else:
+            sec_name = "Unknown"
+        sector_values[sec_name] = sector_values.get(sec_name, 0) + pos["market_value_ngn"]
+
+    sector_weights = {
+        s: v / valuation.total_value_ngn
+        for s, v in sector_values.items()
+    } if valuation.total_value_ngn > 0 else {}
+
+    # Existing position value
+    existing_value = 0.0
+    target_sym = body.symbol.upper()
+    for pos in valuation.positions:
+        if pos["symbol"] == target_sym:
+            existing_value = pos["market_value_ngn"]
+            break
+
+    sizing = risk_mgr.compute_position_size(
+        symbol=target_sym,
+        action=body.action.upper(),
+        confidence=body.confidence,
+        current_price=body.current_price,
+        risk_level=body.risk_level.lower(),
+        sector=body.sector,
+        portfolio_value=valuation.total_value_ngn,
+        cash_available=valuation.cash_ngn,
+        existing_position_value=existing_value,
+        sector_weights=sector_weights,
+        portfolio_drawdown_pct=body.portfolio_drawdown_pct,
+        liquidity_tier=body.liquidity_tier.lower(),
+    )
+
+    return sizing.to_dict()
+
+
+# ── POST /portfolios/{id}/rebalance ─────────────────────────────────────────
+
+@router.post("/{portfolio_id}/rebalance")
+async def generate_rebalance_plan(
+    portfolio_id: int,
+    session: AsyncSession = Depends(get_async_session),
+):
+    """
+    Generate a concrete rebalance plan for the portfolio.
+
+    Connects the latest recommendations with current holdings and the
+    risk manager to produce a prioritised trade list (BUY / SELL / TRIM /
+    RAISE_CASH).  In drawdown conditions the orchestrator switches to
+    defensive or halt mode, actively selling weak positions and
+    recommending money-market parking.
+    """
+    from app.data.sources.ngx_stocks import NGXStockRegistry
+    from app.services.rebalance_orchestrator import RebalanceOrchestrator
+    from app.services.recommendation import RecommendationService
+
+    # Verify portfolio
+    p = (await session.execute(
+        select(Portfolio).where(Portfolio.id == portfolio_id)
+    )).scalar_one_or_none()
+    if not p:
+        raise HTTPException(404, f"Portfolio {portfolio_id} not found")
+
+    # Load transactions → holdings
+    tx_stmt = select(PortfolioTransaction).where(
+        PortfolioTransaction.portfolio_id == portfolio_id
+    ).order_by(PortfolioTransaction.ts.asc())
+    tx_rows = (await session.execute(tx_stmt)).scalars().all()
+    txs = [_row_to_dict(r) for r in tx_rows]
+    for tx in txs:
+        if isinstance(tx["ts"], str):
+            tx["ts"] = date.fromisoformat(tx["ts"])
+
+    snapshot = portfolio_svc.compute_holdings(txs)
+
+    # Latest prices
+    symbols = list(snapshot.holdings.keys())
+    prices: Dict[str, float] = {}
+    for sym in symbols:
+        ohlcv_stmt = select(OHLCVPrice).where(
+            OHLCVPrice.symbol == sym,
+        ).order_by(OHLCVPrice.ts.desc()).limit(1)
+        orow = (await session.execute(ohlcv_stmt)).scalar_one_or_none()
+        if orow:
+            prices[sym] = orow.close
+
+    valuation = portfolio_svc.compute_valuation(snapshot, prices)
+
+    # Sector lookup
+    registry = NGXStockRegistry()
+    sector_lookup: Dict[str, str] = {}
+    for sym in symbols:
+        stock_info = registry.get_stock(sym)
+        if stock_info and "sector" in stock_info:
+            sec = stock_info["sector"]
+            sector_lookup[sym] = sec.value if hasattr(sec, "value") else str(sec)
+        else:
+            sector_lookup[sym] = "Unknown"
+
+    # Peak value for drawdown
+    peak_value = valuation.total_value_ngn
+    if txs:
+        first_tx_date = min(tx["ts"] for tx in txs)
+        price_series_all: Dict[str, Dict[date, float]] = {}
+        for sym in symbols:
+            ohlcv_stmt = select(OHLCVPrice).where(
+                OHLCVPrice.symbol == sym,
+                OHLCVPrice.ts >= first_tx_date,
+            ).order_by(OHLCVPrice.ts.asc())
+            ohlcv_rows = (await session.execute(ohlcv_stmt)).scalars().all()
+            if ohlcv_rows:
+                price_series_all[sym] = {r.ts: r.close for r in ohlcv_rows}
+
+        daily_vals = portfolio_svc.compute_daily_values(
+            txs, price_series_all, first_tx_date, date.today()
+        )
+        if daily_vals:
+            peak_value = max(dv["value_ngn"] for dv in daily_vals)
+
+    # Fetch latest recommendations
+    try:
+        rec_svc = RecommendationService()
+        rec_dicts = await rec_svc.get_top_recommendations(limit=50)
+    except Exception as e:
+        logger.warning("Could not fetch recommendations for rebalance: %s", e)
+        rec_dicts = []
+
+    # Generate plan
+    orch = RebalanceOrchestrator(risk_mgr=risk_mgr)
+    plan = orch.generate_rebalance_plan(
+        recommendations=rec_dicts,
+        positions=valuation.positions,
+        cash_ngn=valuation.cash_ngn,
+        portfolio_value=valuation.total_value_ngn,
+        peak_value=peak_value,
+        sector_lookup=sector_lookup,
+        prices=prices,
+    )
+
+    return plan.to_dict()

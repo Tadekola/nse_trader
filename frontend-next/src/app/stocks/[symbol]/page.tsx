@@ -95,9 +95,36 @@ export default function StockDetailPage() {
   if (error || !rec) {
     return (
       <div className="space-y-4">
-        <Link href="/" className="text-xs text-terminal-dim hover:text-terminal-text">← Back</Link>
+        <Link href="/screener" className="text-xs text-terminal-dim hover:text-terminal-text">← Back to Screener</Link>
         <div className="card py-16 text-center text-terminal-red text-sm">
           {error || `No recommendation available for ${symbol}`}
+        </div>
+      </div>
+    );
+  }
+
+  // Friendly page for stocks without enough historical data
+  if (rec.status === "NO_DATA") {
+    return (
+      <div className="space-y-6">
+        <div>
+          <Link href="/screener" className="text-xs text-terminal-dim hover:text-terminal-text">← Back to Screener</Link>
+        </div>
+        <div>
+          <h1 className="text-xl font-bold text-terminal-text">{rec.symbol}</h1>
+          <p className="text-sm text-terminal-muted">{rec.name}</p>
+        </div>
+        <div className="card border-2 border-terminal-dim/30 p-6">
+          <div className="text-center space-y-4">
+            <span className="text-2xl font-bold font-mono text-terminal-amber">Insufficient Data</span>
+            <p className="text-sm text-terminal-muted max-w-lg mx-auto">
+              {rec.explanation || "We don't have enough trading history for this stock to generate a reliable analysis. This stock may be newly listed, thinly traded, or not yet covered by our data sources."}
+            </p>
+            <div className="flex justify-center gap-6 text-xs font-mono text-terminal-dim pt-2">
+              <div><span className="block text-terminal-amber text-sm font-semibold">0%</span>Data Quality</div>
+              <div><span className="block text-terminal-amber text-sm font-semibold">NO_DATA</span>Status</div>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -141,6 +168,14 @@ export default function StockDetailPage() {
             {rec.bias_probability != null && (
               <span className="text-lg text-terminal-muted ml-2 font-mono">{rec.bias_probability}%</span>
             )}
+            <span className={cn(
+              "ml-3 inline-block px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider",
+              rec.action === "BUY" || rec.action === "STRONG_BUY" ? "bg-terminal-green/20 text-terminal-green" :
+              rec.action === "SELL" || rec.action === "STRONG_SELL" ? "bg-terminal-red/20 text-terminal-red" :
+              "bg-terminal-amber/20 text-terminal-amber"
+            )}>
+              {rec.action.replace("_", " ")}
+            </span>
           </div>
           <div className="text-right">
             <span className="text-2xl font-bold font-mono text-terminal-text">
@@ -353,7 +388,7 @@ export default function StockDetailPage() {
                       (data.action === "BUY" || data.action === "STRONG_BUY") ? "badge-green" :
                       (data.action === "SELL" || data.action === "STRONG_SELL") ? "badge-red" : "badge-amber"
                     )}>
-                      {(data.bias_label as string) || (data.action as string)}
+                      {(data.action as string).replace("_", " ")}
                     </span>
                   </td>
                   <td className="table-cell text-right font-mono">

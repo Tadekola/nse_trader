@@ -6,7 +6,10 @@ import {
   getBuyRecommendations,
   getTopRecommendations,
   getMarketSummary,
+  triggerScan,
+  getLatestScan,
 } from "@/api/client";
+import type { ScanTriggerResponse } from "@/api/client";
 import type {
   Recommendation,
   MarketRegime,
@@ -60,6 +63,20 @@ function actionBadge(action: string) {
   }
 }
 
+function timeAgo(isoString: string): string {
+  const now = Date.now();
+  const then = new Date(isoString).getTime();
+  const diffMs = now - then;
+  if (diffMs < 0) return "just now";
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
 export default function TopPicksPage() {
   const [picks, setPicks] = useState<Recommendation[]>([]);
   const [horizon, setHorizon] = useState<Horizon>("long_term");
@@ -70,6 +87,65 @@ export default function TopPicksPage() {
   const [snapshot, setSnapshot] = useState<MarketSnapshot | null>(null);
   const [gainers, setGainers] = useState<TrendingStock[]>([]);
   const [losers, setLosers] = useState<TrendingStock[]>([]);
+
+  const [scanning, setScanning] = useState(false);
+  const [scanResult, setScanResult] = useState<ScanTriggerResponse | null>(null);
+  const [lastScanTime, setLastScanTime] = useState<string | null>(null);
+
+  // Load last scan time on mount
+  useEffect(() => {
+    getLatestScan()
+      .then((res) => {
+        if (res.has_scans && res.last_scan?.completed_at) {
+          setLastScanTime(res.last_scan.completed_at);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  async function handleRunScan() {
+    setScanning(true);
+    setScanResult(null);
+    try {
+      const res = await triggerScan();
+      setScanResult(res);
+      // Update last scan time
+      setLastScanTime(new Date().toISOString());
+      // Reload market data + picks after scan
+      try {
+        const mkt = await getMarketSummary();
+        setRegime(mkt.regime ?? null);
+        setSnapshot(mkt.snapshot ?? null);
+        setGainers(mkt.trending?.top_gainers ?? []);
+        setLosers(mkt.trending?.top_losers ?? []);
+      } catch {}
+      // Re-trigger pick loading
+      setLoading(true);
+      try {
+        const buyRes = await getBuyRecommendations(horizon, 15);
+        if (buyRes.data.length > 0) {
+          setPicks(buyRes.data);
+        } else {
+          const allRes = await getTopRecommendations({ horizon, limit: 15 });
+          setPicks(allRes.data);
+        }
+      } catch {
+        setPicks([]);
+      }
+      setLoading(false);
+    } catch (err) {
+      setScanResult({
+        success: false,
+        message: err instanceof Error ? err.message : "Scan failed",
+        symbols_fetched: 0,
+        symbols_total: 0,
+        latest_date: "",
+        duration_seconds: 0,
+        warnings: [],
+      });
+    }
+    setScanning(false);
+  }
 
   // Load market data once
   useEffect(() => {
@@ -178,6 +254,26 @@ export default function TopPicksPage() {
         </div>
       )}
 
+      {/* Scan Result Banner */}
+      {scanResult && (
+        <div className={cn(
+          "card px-4 py-2 text-xs font-mono flex items-center justify-between",
+          scanResult.success
+            ? "border-terminal-green/40 bg-terminal-green/10"
+            : "border-terminal-amber/40 bg-terminal-amber/10"
+        )}>
+          <span className={scanResult.success ? "text-terminal-green" : "text-terminal-amber"}>
+            {scanResult.message}
+          </span>
+          <div className="flex items-center gap-3 text-terminal-dim">
+            <span>{scanResult.duration_seconds}s</span>
+            <button onClick={() => setScanResult(null)} className="text-terminal-muted hover:text-terminal-text">
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header + Horizon Toggle */}
       <div className="flex items-center justify-between">
         <div>
@@ -186,16 +282,35 @@ export default function TopPicksPage() {
             Buy recommendations ranked by confidence
           </p>
         </div>
-        <div className="toggle-group">
-          {HORIZONS.map((h) => (
-            <button
-              key={h.key}
-              onClick={() => setHorizon(h.key)}
-              className={cn("toggle-item", horizon === h.key && "toggle-item-active")}
-            >
-              {h.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleRunScan}
+            disabled={scanning}
+            className={cn(
+              "px-3 py-1.5 rounded text-xs font-semibold transition-colors",
+              scanning
+                ? "bg-terminal-dim/20 text-terminal-dim cursor-wait"
+                : "bg-terminal-green/20 text-terminal-green hover:bg-terminal-green/30 border border-terminal-green/40"
+            )}
+          >
+            {scanning ? "Scanning..." : "Run Scan"}
+          </button>
+          {lastScanTime && !scanning && (
+            <span className="text-[10px] text-terminal-dim font-mono">
+              Last: {timeAgo(lastScanTime)}
+            </span>
+          )}
+          <div className="toggle-group">
+            {HORIZONS.map((h) => (
+              <button
+                key={h.key}
+                onClick={() => setHorizon(h.key)}
+                className={cn("toggle-item", horizon === h.key && "toggle-item-active")}
+              >
+                {h.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -230,7 +345,7 @@ export default function TopPicksPage() {
                   <span className="block text-[10px] text-terminal-dim truncate max-w-[180px]">{rec.name}</span>
                 </div>
                 <span className={cn("badge text-[10px]", actionBadge(rec.action))}>
-                  {rec.bias_label || rec.action}
+                  {rec.action.replace("_", " ")}
                 </span>
               </div>
 

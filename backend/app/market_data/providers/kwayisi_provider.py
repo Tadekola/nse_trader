@@ -107,7 +107,7 @@ class KwayisiNGXProvider(MarketDataProvider):
     MIN_REQUEST_INTERVAL_MS = 200  # 200ms between requests
     MAX_CONCURRENT = 5  # Max parallel requests
     
-    def __init__(self, timeout: float = 15.0):
+    def __init__(self, timeout: float = 5.0):
         """
         Initialize provider.
         
@@ -368,7 +368,7 @@ class KwayisiNGXProvider(MarketDataProvider):
         response = await http_fetch(
             url,
             timeout=self._timeout,
-            max_retries=1,
+            max_retries=0,
             raise_for_status=False,
         )
         

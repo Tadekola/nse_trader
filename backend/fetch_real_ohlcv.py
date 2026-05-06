@@ -32,6 +32,7 @@ except ImportError:
 
 # ── Symbols & mappings ───────────────────────────────────────────────
 SYMBOLS = [
+    # Tier 1: Large-cap / high-liquidity (original 30)
     "DANGCEM", "GTCO", "ZENITHBANK", "MTNN", "AIRTELAFRI",
     "BUACEMENT", "SEPLAT", "NESTLE", "ACCESSCORP", "UBA",
     "FIRSTHOLDCO", "STANBIC", "GEREGU", "BUAFOODS", "NB",
@@ -39,6 +40,14 @@ SYMBOLS = [
     "JBERGER", "CUSTODIAN", "UCAP", "CADBURY", "UNILEVER",
     "MANSARD", "VITAFOAM", "NAHCO", "OANDO", "FIDELITYBK",
     "WEMABANK",
+    # Tier 2: Mid/small-cap from NGX PDF ingestion
+    "ETI", "STERLINGNG", "WAPCO", "GUINNESS", "DANGSUGAR",
+    "NASCON", "INTBREW", "CONOIL", "UACN", "NGXGROUP",
+    "JAIZBANK", "NEM", "CORNERST", "TRANSCOHOT", "HONYFLOUR",
+    "CHAMPION", "MCNICHOLS", "LEGENDINT", "CHAMS", "ETRANZACT",
+    "ALEX", "AUSTINLAZ", "BETAGLAS", "CUTIX", "NEIMETH",
+    "PHARMDEKO", "MORISON", "LEARNAFRCA", "REDSTAREX",
+    "CAVERTON", "ETERNA", "JAPAULOIL", "JOHNHOLT", "SCOA",
 ]
 
 # Canonical symbol → ngnmarket.com URL slug (try multiple variants)
@@ -46,6 +55,12 @@ NGNMARKET_VARIANTS: Dict[str, List[str]] = {
     "FIRSTHOLDCO": ["FIRSTHOLDCO", "FBNHOLDINGS", "FBNH"],
     "STANBIC": ["STANBIC", "STANBICIBTC"],
     "FIDELITYBK":  ["FIDELITYBK", "FIDELITYBNK"],
+    "STERLINGNG": ["STERLINGNG", "STERLNBANK", "STERLING"],
+    "WAPCO": ["WAPCO", "LAFARGE"],
+    "TRANSCOHOT": ["TRANSCOHOT", "TRANSCOHOTELS"],
+    "LEARNAFRCA": ["LEARNAFRCA", "LEARNAFRIC"],
+    "ETRANZACT": ["ETRANZACT", "ETRANSACT"],
+    "HONYFLOUR": ["HONYFLOUR", "HONEYFLOUR"],
 }
 
 # Canonical symbol → kwayisi slug
@@ -324,7 +339,14 @@ async def fetch_all() -> Tuple[List[dict], Dict[str, float]]:
     all_rows: List[dict] = []
     real_prices: Dict[str, float] = {}
 
-    async with httpx.AsyncClient(timeout=20.0) as client:
+    async with httpx.AsyncClient(
+        timeout=20.0,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+    ) as client:
         sem = asyncio.Semaphore(5)
 
         # ── Phase 1: ngnmarket current prices ────────────────────────
@@ -345,28 +367,38 @@ async def fetch_all() -> Tuple[List[dict], Dict[str, float]]:
 
         print(f"\n  ngnmarket: {len(real_prices)}/{len(SYMBOLS)} symbols with real prices")
 
-        # ── Phase 2: kwayisi historical ──────────────────────────────
+        # ── Phase 2: kwayisi historical (with preflight check) ────────
         kwayisi_total = 0
-        async def kw_fetch(sym: str):
-            async with sem:
-                await asyncio.sleep(0.5)
-                return await fetch_kwayisi_history(client, sym)
+        kwayisi_reachable = False
+        try:
+            probe = await client.get("https://afx.kwayisi.org/ngx/dangcem/", follow_redirects=True, timeout=8.0)
+            kwayisi_reachable = probe.status_code == 200
+        except Exception:
+            pass
 
-        kw_tasks = [kw_fetch(s) for s in SYMBOLS]
-        kw_results = await asyncio.gather(*kw_tasks, return_exceptions=True)
+        if kwayisi_reachable:
+            async def kw_fetch(sym: str):
+                async with sem:
+                    await asyncio.sleep(0.5)
+                    return await fetch_kwayisi_history(client, sym)
 
-        for sym, result in zip(SYMBOLS, kw_results):
-            if isinstance(result, Exception):
-                logger.debug(f"{sym}: kwayisi exception - {result}")
-            elif result:
-                all_rows.extend(result)
-                kwayisi_total += len(result)
-                # If we didn't get a ngnmarket price, use kwayisi's latest
-                if sym not in real_prices and result:
-                    latest = max(result, key=lambda r: r["ts"])
-                    real_prices[sym] = latest["close"]
+            kw_tasks = [kw_fetch(s) for s in SYMBOLS]
+            kw_results = await asyncio.gather(*kw_tasks, return_exceptions=True)
 
-        print(f"  kwayisi:   {kwayisi_total} historical rows across symbols")
+            for sym, result in zip(SYMBOLS, kw_results):
+                if isinstance(result, Exception):
+                    logger.debug(f"{sym}: kwayisi exception - {result}")
+                elif result:
+                    all_rows.extend(result)
+                    kwayisi_total += len(result)
+                    # If we didn't get a ngnmarket price, use kwayisi's latest
+                    if sym not in real_prices and result:
+                        latest = max(result, key=lambda r: r["ts"])
+                        real_prices[sym] = latest["close"]
+
+            print(f"  kwayisi:   {kwayisi_total} historical rows across symbols")
+        else:
+            print("  kwayisi:   SKIPPED (site unreachable)")
 
     return all_rows, real_prices
 
@@ -567,6 +599,7 @@ async def persist_to_db(rows: List[dict]):
                     close=r["close"],
                     volume=r["volume"],
                     source=r["source"],
+                    ingested_at=datetime.utcnow(),
                 ))
                 inserted += 1
 

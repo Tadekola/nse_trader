@@ -24,6 +24,7 @@ from app.api.v1.audit import router as audit_router
 from app.api.v1.total_return import router as total_return_router
 from app.api.v1.portfolios import router as portfolios_router
 from app.api.v1.scanner import router as scanner_router
+from app.api.v1.scan_trigger import router as scan_trigger_router
 from app.middleware.provenance import ProvenanceEnforcementMiddleware
 from app.middleware.auth import require_api_key
 from app.core.config import get_settings
@@ -140,6 +141,7 @@ app.include_router(audit_router, prefix="/api/v1", dependencies=_auth)
 app.include_router(total_return_router, prefix="/api/v1", dependencies=_auth)
 app.include_router(portfolios_router, prefix="/api/v1", dependencies=_auth)
 app.include_router(scanner_router, prefix="/api/v1", dependencies=_auth)
+app.include_router(scan_trigger_router, prefix="/api/v1", dependencies=_auth)
 
 # ── Public routers (no auth required) ─────────────────────────────
 app.include_router(health_router, prefix="/api/v1")

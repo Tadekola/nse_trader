@@ -206,17 +206,19 @@ async def get_hit_rate_summary(
 @router.get("/backtest")
 async def run_walk_forward_backtest(
     horizon: str = Query(default="long_term", description="Investment horizon: short_term, swing, long_term"),
-    holding: int = Query(default=20, ge=1, le=60, description="Holding period in trading days"),
+    holding: int = Query(default=40, ge=1, le=60, description="Holding period in trading days (40d optimal for NGX costs)"),
     top_n: int = Query(default=5, ge=1, le=20, description="Number of top picks per rebalance"),
-    rebalance: int = Query(default=5, ge=1, le=20, description="Rebalance every N trading days"),
+    rebalance: int = Query(default=40, ge=1, le=60, description="Rebalance every N trading days (match holding period to avoid overlap)"),
+    include_costs: bool = Query(default=True, description="Apply NGX transaction costs (brokerage, SEC, CSCS, stamp duty, VAT)"),
 ):
     """
     Run a walk-forward backtest of the recommendation engine.
 
     Compares engine picks against ASI (market) and equal-weight basket benchmarks.
-    Returns alpha, Sharpe ratio, hit rate, max drawdown, and equity curves.
+    Returns alpha, Sharpe ratio, hit rate, max drawdown, equity curves,
+    and transaction cost impact analysis.
     """
-    from app.services.backtester import run_backtest, BacktestConfig
+    from app.services.backtester import run_backtest, BacktestConfig, TransactionCosts
     from app.core.recommendation_engine import TimeHorizon
 
     try:
@@ -224,12 +226,15 @@ async def run_walk_forward_backtest(
     except ValueError:
         raise HTTPException(400, f"Invalid horizon: {horizon}")
 
+    costs = TransactionCosts(enabled=include_costs)
+
     config = BacktestConfig(
         warmup_sessions=60,
         rebalance_every=rebalance,
         holding_period=holding,
         top_n=top_n,
         horizon=hz,
+        costs=costs,
     )
 
     results = run_backtest(config)

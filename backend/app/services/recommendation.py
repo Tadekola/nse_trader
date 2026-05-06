@@ -364,10 +364,11 @@ class RecommendationService:
         # Convert to dict
         result = self._recommendation_to_dict(recommendation)
 
-        # Default confidence score (no multi-source validation in batch)
-        result['confidence_score'] = 0.8
-        result['suppression_reason'] = None
-        result['status'] = 'ACTIVE'
+        # Compute real per-stock data confidence from OHLCV quality signals
+        data_confidence = self._compute_ohlcv_confidence(symbol, df)
+        result['confidence_score'] = data_confidence
+        result['suppression_reason'] = None if data_confidence >= 0.5 else "Low data quality"
+        result['status'] = 'ACTIVE' if data_confidence >= 0.5 else 'SUPPRESSED'
         result['trade_date'] = trade_date
         result['price_source'] = 'historical_ohlcv'
 
@@ -405,7 +406,7 @@ class RecommendationService:
             internal_action=recommendation.action.value,
             signals=signals_for_bias,
             recommendation_confidence=recommendation.confidence,
-            data_confidence_score=0.8,
+            data_confidence_score=data_confidence,
             is_suppressed=False
         )
 
@@ -438,7 +439,7 @@ class RecommendationService:
                 bias_probability=bias_signal.bias_probability or 50,
                 regime=regime_name,
                 regime_confidence=regime_conf,
-                data_confidence_score=0.8,
+                data_confidence_score=data_confidence,
                 price_at_signal=recommendation.current_price,
                 horizon=horizon.value,
                 indicator_agreement=bias_signal.indicator_agreement,
@@ -845,6 +846,109 @@ class RecommendationService:
         except Exception as e:
             logger.error("Error loading OHLCV for %s: %s", symbol, e)
             return None
+
+    def _compute_ohlcv_confidence(self, symbol: str, df: pd.DataFrame) -> float:
+        """
+        Compute per-stock data confidence from OHLCV quality signals.
+
+        Components (weighted):
+        - Session depth   (20%): more history = higher confidence, caps at 250 sessions
+        - Freshness       (20%): how recent the latest data point is
+        - Liquidity       (20%): median daily volume, scored on log-scale tiers
+        - Gap density     (15%): ratio of actual sessions to expected trading days
+        - OHLCV integrity (15%): High>=Low, Close in range, no zero-price rows
+        - Price continuity(10%): penalizes anomalous daily jumps (>15%)
+
+        Returns float in [0.0, 1.0].
+        """
+        from datetime import date as date_type
+        import math
+
+        if df is None or df.empty:
+            return 0.0
+
+        n = len(df)
+
+        # --- 1. Session depth: ramp 0→1.0 over 60→250 sessions ---
+        if n >= 250:
+            depth_score = 1.0
+        elif n >= 60:
+            depth_score = 0.3 + 0.7 * (n - 60) / 190
+        else:
+            depth_score = n / 60 * 0.3
+
+        # --- 2. Freshness: 1.0 if today, decays 0.2/day ---
+        try:
+            last_date = df.index[-1].date() if hasattr(df.index[-1], 'date') else df.index[-1]
+            if isinstance(last_date, str):
+                last_date = date_type.fromisoformat(last_date)
+            days_old = (date_type.today() - last_date).days
+            freshness_score = max(0.0, 1.0 - days_old * 0.20)
+        except Exception:
+            freshness_score = 0.5
+
+        # --- 3. Liquidity: median volume on log10 tiers ---
+        liquidity_score = 0.0
+        if 'Volume' in df.columns:
+            vol_series = df['Volume'].dropna()
+            vol_positive = vol_series[vol_series > 0]
+            if len(vol_positive) > 0:
+                med_vol = float(vol_positive.median())
+                if med_vol > 0:
+                    log_vol = math.log10(med_vol)
+                    # Tiers: <3 (1K)=0.1, 4 (10K)=0.3, 5 (100K)=0.55, 6 (1M)=0.8, 7+(10M)=1.0
+                    liquidity_score = min(1.0, max(0.0, (log_vol - 2.0) / 5.0))
+
+        # --- 4. Gap density: actual sessions / expected trading days ---
+        gap_score = 1.0
+        try:
+            first_date = df.index[0].date() if hasattr(df.index[0], 'date') else df.index[0]
+            last_dt = df.index[-1].date() if hasattr(df.index[-1], 'date') else df.index[-1]
+            if isinstance(first_date, str):
+                first_date = date_type.fromisoformat(first_date)
+            if isinstance(last_dt, str):
+                last_dt = date_type.fromisoformat(last_dt)
+            calendar_days = (last_dt - first_date).days + 1
+            # Approximate expected trading days: ~5/7 of calendar days
+            expected_sessions = max(1, int(calendar_days * 5 / 7))
+            gap_score = min(1.0, n / expected_sessions)
+        except Exception:
+            gap_score = 0.7
+
+        # --- 5. OHLCV integrity: H>=L, C in [L,H], no zero-price rows ---
+        try:
+            h = df['High']
+            l = df['Low']
+            c = df['Close']
+            hl_ok = (h >= l).sum() / n
+            c_in_range = ((c <= h) & (c >= l)).sum() / n
+            no_zero = ((c > 0) & (h > 0) & (l > 0)).sum() / n
+            integrity_score = (hl_ok + c_in_range + no_zero) / 3.0
+        except Exception:
+            integrity_score = 0.7
+
+        # --- 6. Price continuity: penalize anomalous daily jumps >15% ---
+        continuity_score = 1.0
+        try:
+            closes = df['Close'].dropna()
+            if len(closes) > 1:
+                pct_changes = closes.pct_change().dropna().abs()
+                anomalous = (pct_changes > 0.15).sum()
+                continuity_score = max(0.0, 1.0 - anomalous / len(pct_changes) * 3.0)
+        except Exception:
+            continuity_score = 0.8
+
+        # --- Weighted combination ---
+        score = (
+            depth_score * 0.20
+            + freshness_score * 0.20
+            + liquidity_score * 0.20
+            + gap_score * 0.15
+            + integrity_score * 0.15
+            + continuity_score * 0.10
+        )
+
+        return round(min(1.0, max(0.0, score)), 3)
 
     def _get_market_dataframe(self) -> Optional[pd.DataFrame]:
         """

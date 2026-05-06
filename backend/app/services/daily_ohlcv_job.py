@@ -109,7 +109,7 @@ async def daily_ohlcv_loop():
         )
         today_count = cur.fetchone()[0]
         conn.close()
-        if today_count >= 20:  # Most symbols already fetched
+        if today_count >= 50:  # Most symbols already fetched (64 total)
             last_fetch_date = date.today()
             logger.info("Today's OHLCV data already exists (%d rows), skipping initial fetch", today_count)
     except Exception as e:

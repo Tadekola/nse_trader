@@ -77,24 +77,23 @@ class TestBiasCompatibilityRules:
         assert compat.bearish_multiplier < 1.0
         assert compat.neutral_multiplier >= 1.0
     
-    def test_high_volatility_has_confidence_penalty(self):
-        """Test that HIGH_VOLATILITY regime has a confidence penalty."""
+    def test_high_volatility_reduces_directional_bias(self):
+        """Test that HIGH_VOLATILITY regime reduces directional bias."""
         compat = REGIME_BIAS_COMPATIBILITY[SessionRegime.HIGH_VOLATILITY]
-        assert compat.confidence_penalty > 0
+        assert compat.bullish_multiplier < 1.0
+        assert compat.bearish_multiplier < 1.0
     
     def test_low_liquidity_heavily_penalizes(self):
         """Test that LOW_LIQUIDITY regime heavily penalizes directional bias."""
         compat = REGIME_BIAS_COMPATIBILITY[SessionRegime.LOW_LIQUIDITY]
-        assert compat.bullish_multiplier <= 0.5
-        assert compat.bearish_multiplier <= 0.5
-        assert compat.confidence_penalty > 0
+        assert compat.bullish_multiplier <= 0.7
+        assert compat.bearish_multiplier <= 0.7
     
     def test_news_driven_highest_uncertainty(self):
-        """Test that NEWS_DRIVEN has highest confidence penalty."""
-        compat = REGIME_BIAS_COMPATIBILITY[SessionRegime.NEWS_DRIVEN]
-        # NEWS_DRIVEN should have the highest confidence penalty
-        max_penalty = max(c.confidence_penalty for c in REGIME_BIAS_COMPATIBILITY.values())
-        assert compat.confidence_penalty == max_penalty
+        """Test that NEWS_DRIVEN has lowest confidence multiplier."""
+        # NEWS_DRIVEN should have the lowest confidence multiplier
+        min_mult = min(REGIME_CONFIDENCE_MULTIPLIERS.values())
+        assert REGIME_CONFIDENCE_MULTIPLIERS[SessionRegime.NEWS_DRIVEN] == min_mult
 
 
 class TestMarketRegimeEngine:

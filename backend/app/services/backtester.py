@@ -93,6 +93,134 @@ class RebalanceSnapshot:
 
 
 @dataclass
+class SlippageModel:
+    """Market impact / slippage estimator for thin NGX liquidity.
+
+    Two components:
+    1. Bid-ask spread: estimated as a fraction of the daily price range
+       (High - Low) / Close.  Half-spread is paid on each side.
+    2. Volume impact: square-root model — price moves proportionally to
+       sqrt(order_size / daily_volume).  Captures the reality that large
+       orders on NGX move the price significantly.
+
+    The ``estimate_slippage_pct`` method returns the one-way slippage
+    percentage given recent OHLCV data and an assumed order size in shares.
+    """
+    # Fraction of (H-L)/C used as spread estimate (NGX is wide-spread)
+    spread_fraction: float = 0.50
+    # Volume-impact coefficient (higher = more impact per unit of participation)
+    impact_coefficient: float = 0.01
+    # Default assumed order size in shares when no portfolio context
+    default_order_shares: int = 1000
+    # Maximum one-way slippage cap (%)
+    max_slippage_pct: float = 2.0
+    # Minimum spread floor when OHLCV has no intraday range (%)
+    min_spread_pct: float = 0.30
+    enabled: bool = True
+
+    def estimate_slippage_pct(
+        self,
+        price_data: Optional[pd.DataFrame] = None,
+        order_shares: Optional[int] = None,
+    ) -> float:
+        """Estimate one-way slippage as a percentage of price.
+
+        Args:
+            price_data: Recent OHLCV DataFrame with High, Low, Close, Volume columns.
+            order_shares: Number of shares in the order.
+
+        Returns:
+            Estimated slippage percentage (e.g. 0.5 means 0.5% slippage).
+        """
+        if not self.enabled:
+            return 0.0
+
+        shares = order_shares or self.default_order_shares
+
+        # Default fallback if no data
+        if price_data is None or len(price_data) < 5:
+            return 0.5  # Conservative 0.5% default
+
+        recent = price_data.tail(20)
+
+        # 1. Bid-ask spread estimate from price range
+        spreads = (recent["High"] - recent["Low"]) / recent["Close"]
+        spreads = spreads.replace([np.inf, -np.inf], np.nan).dropna()
+        avg_spread_pct = float(spreads.median()) * 100 if len(spreads) > 0 else 0.0
+        # Floor: if OHLCV has no intraday range (H==L), use minimum spread
+        if avg_spread_pct < self.min_spread_pct:
+            avg_spread_pct = self.min_spread_pct
+        half_spread = avg_spread_pct * self.spread_fraction / 2
+
+        # 2. Volume impact: sqrt(participation_rate) * coefficient
+        avg_volume = float(recent["Volume"].median()) if "Volume" in recent.columns else 0
+        if avg_volume > 0:
+            participation = min(shares / avg_volume, 1.0)
+            volume_impact = self.impact_coefficient * np.sqrt(participation) * 100
+        else:
+            volume_impact = 0.5  # No volume data → conservative
+
+        total = half_spread + volume_impact
+        return min(total, self.max_slippage_pct)
+
+
+@dataclass
+class TransactionCosts:
+    """NGX transaction cost model.
+
+    Default rates reflect typical Nigerian Stock Exchange fees:
+    - Brokerage: 1.50% (negotiable, can be lower for large orders)
+    - SEC fee: 0.30%
+    - CSCS (settlement): 0.30%
+    - Stamp duty: 0.075%
+    - VAT: 7.5% of brokerage commission
+
+    Total one-way cost ~ 2.29%.  Round-trip ~ 4.58%.
+    Slippage adds ~0.3-1.0% per side depending on liquidity.
+    """
+    brokerage_pct: float = 1.50     # Broker commission (%)
+    sec_fee_pct: float = 0.30       # SEC fee (%)
+    cscs_fee_pct: float = 0.30      # CSCS settlement (%)
+    stamp_duty_pct: float = 0.075   # Stamp duty (%)
+    vat_on_commission_pct: float = 7.5  # VAT on brokerage (%)
+    slippage: SlippageModel = field(default_factory=SlippageModel)
+    enabled: bool = True            # Toggle costs on/off
+
+    @property
+    def one_way_pct(self) -> float:
+        """Total one-way explicit cost as percentage of trade value (excl. slippage)."""
+        vat_amount = self.brokerage_pct * (self.vat_on_commission_pct / 100)
+        return (
+            self.brokerage_pct
+            + self.sec_fee_pct
+            + self.cscs_fee_pct
+            + self.stamp_duty_pct
+            + vat_amount
+        )
+
+    @property
+    def round_trip_pct(self) -> float:
+        """Total round-trip explicit cost as percentage (excl. slippage)."""
+        return self.one_way_pct * 2
+
+    def apply_buy_cost(
+        self, price: float, slippage_pct: float = 0.0
+    ) -> float:
+        """Effective cost basis after buying (price goes UP by fees + slippage)."""
+        if not self.enabled:
+            return price
+        return price * (1 + (self.one_way_pct + slippage_pct) / 100)
+
+    def apply_sell_cost(
+        self, price: float, slippage_pct: float = 0.0
+    ) -> float:
+        """Net proceeds after selling (price goes DOWN by fees + slippage)."""
+        if not self.enabled:
+            return price
+        return price * (1 - (self.one_way_pct + slippage_pct) / 100)
+
+
+@dataclass
 class BacktestConfig:
     """Configuration for the walk-forward backtest."""
     warmup_sessions: int = 60       # Min sessions before first rebalance
@@ -107,6 +235,8 @@ class BacktestConfig:
     )
     # If no BUY signals, use confidence ranking instead
     fallback_to_confidence_rank: bool = True
+    # Transaction costs (NGX defaults)
+    costs: TransactionCosts = field(default_factory=TransactionCosts)
 
 
 @dataclass
@@ -139,6 +269,12 @@ class BacktestResults:
     hit_rate_vs_equal_weight: float = 0.0
     avg_pick_return: float = 0.0
     win_loss_ratio: float = 0.0
+    # Transaction costs
+    total_cost_pct: float = 0.0           # Total cost drag over backtest
+    avg_cost_per_trade_pct: float = 0.0   # Average round-trip cost per rebalance
+    cost_drag_annualised_pct: float = 0.0 # Annualised cost drag
+    gross_return: float = 0.0             # Return before costs
+    net_return: float = 0.0               # Return after costs (= portfolio_cumulative_return)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to API-friendly dict."""
@@ -175,6 +311,16 @@ class BacktestResults:
                 "hit_rate_vs_equal_weight": round(self.hit_rate_vs_equal_weight, 4),
                 "avg_pick_return_pct": round(self.avg_pick_return, 4),
                 "win_loss_ratio": round(self.win_loss_ratio, 4),
+            },
+            "transaction_costs": {
+                "enabled": self.config.costs.enabled,
+                "one_way_pct": round(self.config.costs.one_way_pct, 4),
+                "round_trip_pct": round(self.config.costs.round_trip_pct, 4),
+                "total_cost_drag_pct": round(self.total_cost_pct, 4),
+                "avg_cost_per_trade_pct": round(self.avg_cost_per_trade_pct, 4),
+                "cost_drag_annualised_pct": round(self.cost_drag_annualised_pct, 4),
+                "gross_return_pct": round(self.gross_return, 4),
+                "net_return_pct": round(self.net_return, 4),
             },
             "equity_curves": {
                 "portfolio": [round(v, 4) for v in self.portfolio_equity],
@@ -320,7 +466,7 @@ def run_backtest(
         else:
             continue
 
-        # 3. Measure forward returns
+        # 3. Measure forward returns (with transaction cost adjustment)
         picks: List[PickRecord] = []
         for sym, act, conf, entry_price in selected:
             sym_df = all_data.get(sym)
@@ -333,7 +479,17 @@ def run_backtest(
                 continue
             exit_price = float(exit_rows.iloc[0]["Close"])
 
-            ret = (exit_price - entry_price) / entry_price * 100
+            # Estimate slippage from recent OHLCV data
+            data_up_to = sym_df.loc[:as_of]
+            slippage = config.costs.slippage.estimate_slippage_pct(
+                price_data=data_up_to,
+            )
+
+            # Apply transaction costs + slippage: buy at inflated price, sell at deflated price
+            cost_adj_entry = config.costs.apply_buy_cost(entry_price, slippage)
+            cost_adj_exit = config.costs.apply_sell_cost(exit_price, slippage)
+            ret = (cost_adj_exit - cost_adj_entry) / cost_adj_entry * 100
+            gross_ret = (exit_price - entry_price) / entry_price * 100
 
             pick = PickRecord(
                 rebalance_date=as_of.date(),
@@ -344,6 +500,7 @@ def run_backtest(
                 price_at_exit=exit_price,
                 return_pct=ret,
             )
+            pick._gross_return_pct = gross_ret  # type: ignore[attr-defined]
             picks.append(pick)
 
         if not picks:
@@ -405,11 +562,13 @@ def run_backtest(
         return results
 
     # Equity curves (compounding)
-    port_equity = [1.0]
+    port_equity = [1.0]       # Net (after costs)
+    gross_equity = [1.0]      # Gross (before costs)
     asi_equity = [1.0]
     ew_equity = [1.0]
 
     all_pick_returns = []
+    all_gross_returns = []
     beats_asi = 0
     beats_ew = 0
     total_comparable_asi = 0
@@ -419,6 +578,14 @@ def run_backtest(
         if snap.portfolio_return is not None:
             port_equity.append(port_equity[-1] * (1 + snap.portfolio_return / 100))
             all_pick_returns.append(snap.portfolio_return)
+            # Compute gross return for this snapshot
+            gross_rets = [
+                getattr(p, '_gross_return_pct', p.return_pct)
+                for p in snap.picks
+            ]
+            snap_gross = float(np.mean(gross_rets)) if gross_rets else 0
+            gross_equity.append(gross_equity[-1] * (1 + snap_gross / 100))
+            all_gross_returns.append(snap_gross)
         if snap.asi_return is not None:
             asi_equity.append(asi_equity[-1] * (1 + snap.asi_return / 100))
         if snap.equal_weight_return is not None:
@@ -442,6 +609,16 @@ def run_backtest(
     results.asi_cumulative_return = (asi_equity[-1] - 1) * 100
     results.equal_weight_cumulative_return = (ew_equity[-1] - 1) * 100
 
+    # Transaction cost metrics
+    results.gross_return = (gross_equity[-1] - 1) * 100
+    results.net_return = results.portfolio_cumulative_return
+    results.total_cost_pct = results.gross_return - results.net_return
+    if all_gross_returns:
+        per_trade_costs = [
+            g - n for g, n in zip(all_gross_returns, all_pick_returns)
+        ]
+        results.avg_cost_per_trade_pct = float(np.mean(per_trade_costs))
+
     # Alpha
     results.alpha_vs_asi = results.portfolio_cumulative_return - results.asi_cumulative_return
     results.alpha_vs_equal_weight = results.portfolio_cumulative_return - results.equal_weight_cumulative_return
@@ -453,6 +630,10 @@ def run_backtest(
         results.portfolio_annualised_return = (
             (port_equity[-1] ** (1 / years)) - 1
         ) * 100
+        # Annualised cost drag = gross annualised - net annualised
+        if gross_equity[-1] > 0:
+            gross_ann = ((gross_equity[-1] ** (1 / years)) - 1) * 100
+            results.cost_drag_annualised_pct = gross_ann - results.portfolio_annualised_return
 
     # Sharpe ratio
     if all_pick_returns and len(all_pick_returns) > 1:

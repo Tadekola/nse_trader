@@ -264,6 +264,68 @@ export async function getMarketRegime(): Promise<{ success: boolean; regime: str
   return fetchJSON(`${BASE}/market/regime`);
 }
 
+// ── Scan Trigger ──────────────────────────────────────────────────────
+
+export interface ScanHistoryEntry {
+  id: number;
+  triggered_at: string;
+  completed_at: string | null;
+  success: boolean;
+  symbols_fetched: number;
+  symbols_total: number;
+  latest_date: string | null;
+  duration_seconds: number;
+  warnings: string[];
+  message: string | null;
+}
+
+export interface ScanTriggerResponse {
+  success: boolean;
+  message: string;
+  symbols_fetched: number;
+  symbols_total: number;
+  latest_date: string;
+  duration_seconds: number;
+  warnings: string[];
+}
+
+export interface ScanLatestResponse {
+  has_scans: boolean;
+  last_scan: ScanHistoryEntry | null;
+}
+
+export async function getLatestScan(): Promise<ScanLatestResponse> {
+  return fetchJSON<ScanLatestResponse>(`${BASE}/scan/latest`);
+}
+
+export async function triggerScan(): Promise<ScanTriggerResponse> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 150_000);
+  try {
+    const res = await fetch(`${BASE}/scan/trigger`, {
+      method: "POST",
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      const msg = body
+        ? `Scanner API ${res.status}: ${body.slice(0, 200)}`
+        : `Scan failed (${res.status})`;
+      emitToast(msg, "error");
+      throw new Error(msg);
+    }
+    return res.json() as Promise<ScanTriggerResponse>;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      emitToast("Scan timed out — try again later", "warning");
+      throw new Error("Scan timed out");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ── Audit ─────────────────────────────────────────────────────────────
 
 export async function listAuditEvents(opts?: {

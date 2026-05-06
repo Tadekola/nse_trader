@@ -16,6 +16,7 @@ Signal States:
 Includes data confidence scoring - signals may be suppressed
 when data quality is insufficient (confidence < 0.75).
 """
+import math
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -376,9 +377,31 @@ async def get_stock_recommendation(
     )
     
     if recommendation is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Could not generate recommendation for {symbol.upper()}"
+        # Return a structured NO_DATA response instead of 404
+        # so the frontend can render a friendly page
+        from app.data.sources.ngx_stocks import NGXStockRegistry
+        registry = NGXStockRegistry()
+        stock_info = registry.get_stock(symbol)
+        return RecommendationResponse(
+            success=True,
+            data={
+                "symbol": symbol.upper(),
+                "name": stock_info.get("name", symbol.upper()) if stock_info else symbol.upper(),
+                "action": "NO_DATA",
+                "horizon": horizon.value,
+                "confidence": 0.0,
+                "current_price": 0.0,
+                "primary_reason": "Insufficient historical data to generate a recommendation.",
+                "supporting_reasons": [],
+                "risk_warnings": ["No OHLCV price history available for this stock."],
+                "explanation": f"We don't have enough trading data for {symbol.upper()} to generate a reliable analysis. This stock may be newly listed, thinly traded, or not yet covered by our data sources.",
+                "status": "NO_DATA",
+                "confidence_score": 0.0,
+                "suppression_reason": "Insufficient historical price data",
+                "bias_direction": "neutral",
+                "bias_probability": None,
+                "bias_label": "Insufficient Data",
+            }
         )
     
     return RecommendationResponse(
@@ -426,13 +449,27 @@ async def get_stock_all_horizons(
             recommendations[h_value] = rec
     
     if not recommendations:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Could not generate recommendations for {symbol.upper()}"
-        )
+        return {
+            "success": True,
+            "symbol": symbol.upper(),
+            "recommendations": {},
+            "no_data": True,
+            "reason": "Insufficient historical data to generate recommendations."
+        }
     
-    return {
+    return _sanitize_floats({
         "success": True,
         "symbol": symbol.upper(),
         "recommendations": recommendations
-    }
+    })
+
+
+def _sanitize_floats(obj: Any) -> Any:
+    """Recursively replace NaN/Infinity floats with None for JSON safety."""
+    if isinstance(obj, float):
+        return None if (math.isnan(obj) or math.isinf(obj)) else obj
+    if isinstance(obj, dict):
+        return {k: _sanitize_floats(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_floats(v) for v in obj]
+    return obj

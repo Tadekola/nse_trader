@@ -103,30 +103,30 @@ REGIME_BIAS_COMPATIBILITY: Dict[SessionRegime, BiasCompatibility] = {
         confidence_penalty=0.0
     ),
     SessionRegime.MEAN_REVERTING: BiasCompatibility(
-        bullish_multiplier=0.6,   # Suppress strong bullish (likely to revert)
-        bearish_multiplier=0.6,   # Suppress strong bearish (likely to revert)
-        neutral_multiplier=1.3,   # Favor neutral/range-bound strategies
-        suppress_bullish=False,   # Don't fully suppress, just reduce
+        bullish_multiplier=0.85,  # Mild reduction (momentum less reliable in range)
+        bearish_multiplier=0.85,  # Mild reduction (momentum less reliable in range)
+        neutral_multiplier=1.15,  # Slight favor for neutral/range-bound strategies
+        suppress_bullish=False,
         suppress_bearish=False,
-        confidence_penalty=0.1    # Add uncertainty in range-bound markets
+        confidence_penalty=0.0    # No extra penalty — confidence_multiplier=0.9 suffices
     ),
     SessionRegime.HIGH_VOLATILITY: BiasCompatibility(
-        bullish_multiplier=0.7,
-        bearish_multiplier=0.7,
+        bullish_multiplier=0.85,  # Moderate reduction (wider swings = more uncertainty)
+        bearish_multiplier=0.85,
         neutral_multiplier=1.1,
-        confidence_penalty=0.15   # Higher uncertainty in volatile markets
+        confidence_penalty=0.0    # confidence_multiplier=0.85 handles the penalty
     ),
     SessionRegime.LOW_LIQUIDITY: BiasCompatibility(
-        bullish_multiplier=0.5,   # Heavily penalize directional bets
-        bearish_multiplier=0.5,
+        bullish_multiplier=0.65,  # Significant penalty (hard to execute directional bets)
+        bearish_multiplier=0.65,
         neutral_multiplier=1.2,
-        confidence_penalty=0.2    # High uncertainty in illiquid markets
+        confidence_penalty=0.0    # confidence_multiplier=0.80 handles the penalty
     ),
     SessionRegime.NEWS_DRIVEN: BiasCompatibility(
-        bullish_multiplier=0.8,
-        bearish_multiplier=0.8,
+        bullish_multiplier=0.75,  # Event-driven = unpredictable direction
+        bearish_multiplier=0.75,
         neutral_multiplier=1.0,
-        confidence_penalty=0.25   # Highest uncertainty - unpredictable
+        confidence_penalty=0.0    # confidence_multiplier=0.70 handles the penalty
     )
 }
 
@@ -134,9 +134,9 @@ REGIME_BIAS_COMPATIBILITY: Dict[SessionRegime, BiasCompatibility] = {
 REGIME_CONFIDENCE_MULTIPLIERS: Dict[SessionRegime, float] = {
     SessionRegime.TRENDING: 1.1,        # Higher confidence in trends
     SessionRegime.MEAN_REVERTING: 0.9,  # Lower confidence in range
-    SessionRegime.HIGH_VOLATILITY: 0.75, # Much lower in high vol
-    SessionRegime.LOW_LIQUIDITY: 0.7,   # Low confidence in illiquid
-    SessionRegime.NEWS_DRIVEN: 0.6      # Lowest - unpredictable
+    SessionRegime.HIGH_VOLATILITY: 0.85, # Moderate reduction in high vol
+    SessionRegime.LOW_LIQUIDITY: 0.80,  # Lower confidence in illiquid
+    SessionRegime.NEWS_DRIVEN: 0.70     # Lowest - unpredictable
 }
 
 

@@ -3,11 +3,11 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com/)
 [![Next.js](https://img.shields.io/badge/Next.js-14+-black.svg)](https://nextjs.org/)
-[![Tests](https://img.shields.io/badge/Tests-550+-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/Tests-1326+-brightgreen.svg)](#testing)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **Nigerian Stock Exchange Investment Intelligence Platform**
-FastAPI · Next.js · PostgreSQL/SQLite · Alembic · 550+ tests · MIT
+FastAPI · Next.js · PostgreSQL/SQLite · Alembic · 1326+ tests · MIT
 
 NGX Trader is an institutional-grade **decision-support** platform for the Nigerian equity market (NGX). It combines **market data**, **fundamental quality scoring**, **total return (dividends/splits)**, **portfolio tracking**, and **strict safety governance** to help investors identify high-quality Nigerian stocks.
 
@@ -153,7 +153,7 @@ nse_trader/
 │   │   ├── cli/                  # CLI tools
 │   │   └── main.py              # FastAPI app
 │   ├── data/                     # Fundamentals CSV data
-│   ├── tests/                    # 550+ unit tests
+│   ├── tests/                    # 1326+ unit tests
 │   ├── seed_real.py              # Production-ish seeding
 │   └── seed_demo.py              # Demo seeding
 ├── frontend-next/                # Next.js frontend (primary)
@@ -275,7 +275,12 @@ npx next build
 | Portfolio & Performance | 252 |
 | Audit & Provenance | 49 |
 | Corporate Actions & TRI | 57 |
-| **Total** | **550+** |
+| Corporate Actions API | 15 |
+| Summary & Timeseries | 62 |
+| Portfolio Risk & Rebalance | 75 |
+| Signal Audit & Provenance | 49 |
+| Confidence Consolidated | 37 |
+| **Total** | **1326+** |
 
 ---
 

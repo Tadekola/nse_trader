@@ -8,6 +8,8 @@ Covers:
 4. Integration with SignalLifecycleManager (governance)
 """
 import pytest
+import numpy as np
+import pandas as pd
 from unittest.mock import Mock, AsyncMock, patch
 from datetime import datetime, timezone
 
@@ -153,6 +155,20 @@ async def test_get_recommendation_success(recommendation_service, mock_validatio
         is_valid=True, warnings=[], no_trade_decision=None
     )
     
+    # 5. Mock _build_price_dataframe (hits real OHLCV storage) and _get_market_dataframe
+    dates = pd.date_range("2024-01-01", periods=100, freq="B")
+    mock_df = pd.DataFrame({
+        "Open": 50.0 + np.random.randn(100).cumsum() * 0.5,
+        "High": 51.0 + np.random.randn(100).cumsum() * 0.5,
+        "Low": 49.0 + np.random.randn(100).cumsum() * 0.5,
+        "Close": 50.0 + np.random.randn(100).cumsum() * 0.5,
+        "Volume": np.random.randint(100000, 1000000, 100).astype(float),
+    }, index=dates)
+    recommendation_service._build_price_dataframe = Mock(return_value=mock_df)
+    recommendation_service._get_market_dataframe = Mock(return_value=mock_df)
+    recommendation_service._growth_profiles_loaded = True  # skip DB call
+    recommendation_service._compute_ohlcv_confidence = Mock(return_value=0.75)
+
     # Execute
     result = await recommendation_service.get_recommendation(
         symbol=symbol,

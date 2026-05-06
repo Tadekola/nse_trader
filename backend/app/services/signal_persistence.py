@@ -11,7 +11,7 @@ signals into memory on startup for fast reads.
 import logging
 import sqlite3
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -25,6 +25,13 @@ from app.services.signal_history import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_DB_PATH = Path(__file__).parent.parent.parent / "data" / "signal_history.db"
+
+
+def _ensure_utc(dt: datetime) -> datetime:
+    """Ensure a datetime is timezone-aware (UTC). Naive datetimes are assumed UTC."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 class PersistentSignalStore(SignalHistoryStore):
@@ -119,10 +126,10 @@ class PersistentSignalStore(SignalHistoryStore):
                 regime=d["regime"],
                 regime_confidence=d["regime_confidence"],
                 data_confidence_score=d["data_confidence_score"],
-                generated_at=datetime.fromisoformat(d["generated_at"]),
+                generated_at=_ensure_utc(datetime.fromisoformat(d["generated_at"])),
                 price_at_signal=d["price_at_signal"],
                 horizon=d["horizon"],
-                expires_at=datetime.fromisoformat(d["expires_at"]) if d["expires_at"] else None,
+                expires_at=_ensure_utc(datetime.fromisoformat(d["expires_at"])) if d["expires_at"] else None,
                 price_1d=d["price_1d"],
                 price_5d=d["price_5d"],
                 price_20d=d["price_20d"],
@@ -133,7 +140,7 @@ class PersistentSignalStore(SignalHistoryStore):
                 hit_5d=bool(d["hit_5d"]) if d["hit_5d"] is not None else None,
                 hit_20d=bool(d["hit_20d"]) if d["hit_20d"] is not None else None,
                 status=SignalStatus(d["status"]),
-                evaluated_at=datetime.fromisoformat(d["evaluated_at"]) if d["evaluated_at"] else None,
+                evaluated_at=_ensure_utc(datetime.fromisoformat(d["evaluated_at"])) if d["evaluated_at"] else None,
                 pre_regime_probability=d["pre_regime_probability"],
                 regime_adjustment_factor=d["regime_adjustment_factor"],
                 indicator_agreement=d["indicator_agreement"],
