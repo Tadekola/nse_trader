@@ -8,6 +8,7 @@ import {
   getTimeseries,
   getDecomposition,
   listTransactions,
+  addTransactions,
 } from "@/api/client";
 import type {
   SummaryResponse,
@@ -29,6 +30,186 @@ import {
 } from "@/api/utils";
 import { TimeseriesChart } from "@/components/charts/timeseries-chart";
 
+const TX_TYPES = ["BUY", "SELL", "DIVIDEND", "DEPOSIT", "WITHDRAWAL", "FEE"];
+
+function AddTransactionModal({
+  portfolioId,
+  onClose,
+  onAdded,
+}: {
+  portfolioId: number;
+  onClose: () => void;
+  onAdded: () => void;
+}) {
+  const [txType, setTxType] = useState("BUY");
+  const [ts, setTs] = useState(new Date().toISOString().slice(0, 10));
+  const [symbol, setSymbol] = useState("");
+  const [quantity, setQuantity] = useState("");
+  const [priceNgn, setPriceNgn] = useState("");
+  const [amountNgn, setAmountNgn] = useState("");
+  const [feesNgn, setFeesNgn] = useState("0");
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const needsSymbol = ["BUY", "SELL", "DIVIDEND"].includes(txType);
+  const needsQtyPrice = ["BUY", "SELL"].includes(txType);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      const qty = quantity ? parseFloat(quantity) : undefined;
+      const price = priceNgn ? parseFloat(priceNgn) : undefined;
+      let amount = parseFloat(amountNgn);
+      if (!amount && qty && price) amount = qty * price;
+      if (!amount) { setError("Amount is required"); setSubmitting(false); return; }
+      await addTransactions(portfolioId, [{
+        ts,
+        tx_type: txType,
+        symbol: symbol.trim().toUpperCase() || undefined,
+        quantity: qty,
+        price_ngn: price,
+        amount_ngn: amount,
+        fees_ngn: parseFloat(feesNgn) || 0,
+        notes: notes.trim() || undefined,
+      }]);
+      onAdded();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add transaction");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="bg-terminal-bg border border-terminal-border rounded-lg w-full max-w-md p-6 shadow-xl">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-base font-semibold text-terminal-text">Add Transaction</h2>
+          <button onClick={onClose} className="text-terminal-dim hover:text-terminal-text text-xl leading-none">×</button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-terminal-dim mb-1">Type *</label>
+              <select
+                value={txType}
+                onChange={(e) => setTxType(e.target.value)}
+                className="w-full bg-terminal-surface border border-terminal-border rounded px-3 py-2 text-sm text-terminal-text focus:outline-none focus:border-terminal-accent"
+              >
+                {TX_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-terminal-dim mb-1">Date *</label>
+              <input
+                type="date"
+                value={ts}
+                onChange={(e) => setTs(e.target.value)}
+                className="w-full bg-terminal-surface border border-terminal-border rounded px-3 py-2 text-sm text-terminal-text focus:outline-none focus:border-terminal-accent"
+                required
+              />
+            </div>
+          </div>
+          {needsSymbol && (
+            <div>
+              <label className="block text-xs text-terminal-dim mb-1">Symbol {needsQtyPrice ? "*" : ""}</label>
+              <input
+                type="text"
+                value={symbol}
+                onChange={(e) => setSymbol(e.target.value)}
+                placeholder="e.g. GTCO"
+                className="w-full bg-terminal-surface border border-terminal-border rounded px-3 py-2 text-sm text-terminal-text placeholder-terminal-dim focus:outline-none focus:border-terminal-accent"
+              />
+            </div>
+          )}
+          {needsQtyPrice && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-terminal-dim mb-1">Quantity *</label>
+                <input
+                  type="number"
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  placeholder="e.g. 1000"
+                  className="w-full bg-terminal-surface border border-terminal-border rounded px-3 py-2 text-sm text-terminal-text placeholder-terminal-dim focus:outline-none focus:border-terminal-accent"
+                  min="0" step="any"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-terminal-dim mb-1">Price (₦) *</label>
+                <input
+                  type="number"
+                  value={priceNgn}
+                  onChange={(e) => setPriceNgn(e.target.value)}
+                  placeholder="e.g. 140.00"
+                  className="w-full bg-terminal-surface border border-terminal-border rounded px-3 py-2 text-sm text-terminal-text placeholder-terminal-dim focus:outline-none focus:border-terminal-accent"
+                  min="0" step="any"
+                />
+              </div>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-terminal-dim mb-1">
+                Amount (₦) {needsQtyPrice ? "(auto from qty×price)" : "*"}
+              </label>
+              <input
+                type="number"
+                value={amountNgn}
+                onChange={(e) => setAmountNgn(e.target.value)}
+                placeholder="e.g. 140000"
+                className="w-full bg-terminal-surface border border-terminal-border rounded px-3 py-2 text-sm text-terminal-text placeholder-terminal-dim focus:outline-none focus:border-terminal-accent"
+                min="0" step="any"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-terminal-dim mb-1">Fees (₦)</label>
+              <input
+                type="number"
+                value={feesNgn}
+                onChange={(e) => setFeesNgn(e.target.value)}
+                placeholder="0"
+                className="w-full bg-terminal-surface border border-terminal-border rounded px-3 py-2 text-sm text-terminal-text placeholder-terminal-dim focus:outline-none focus:border-terminal-accent"
+                min="0" step="any"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-terminal-dim mb-1">Notes (optional)</label>
+            <input
+              type="text"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Optional note"
+              className="w-full bg-terminal-surface border border-terminal-border rounded px-3 py-2 text-sm text-terminal-text placeholder-terminal-dim focus:outline-none focus:border-terminal-accent"
+            />
+          </div>
+          {error && <p className="text-xs text-terminal-red">{error}</p>}
+          <div className="flex gap-3 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 text-sm border border-terminal-border rounded text-terminal-dim hover:text-terminal-text transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="flex-1 px-4 py-2 text-sm bg-terminal-accent text-black font-medium rounded hover:opacity-90 disabled:opacity-50 transition-opacity"
+            >
+              {submitting ? "Adding..." : "Add Transaction"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function PortfolioDetailPage() {
   const params = useParams();
   const id = Number(params.id);
@@ -39,6 +220,7 @@ export default function PortfolioDetailPage() {
   const [decomposition, setDecomposition] = useState<DecompositionResponse | null>(null);
   const [transactions, setTransactions] = useState<TransactionList | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showAddTx, setShowAddTx] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -69,6 +251,11 @@ export default function PortfolioDetailPage() {
 
   const MODES: ReportingMode[] = ["NGN", "USD", "REAL_NGN"];
 
+  function handleTxAdded() {
+    setShowAddTx(false);
+    load();
+  }
+
   if (loading && !summary) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -93,11 +280,19 @@ export default function PortfolioDetailPage() {
 
   return (
     <div className="space-y-6">
+      {showAddTx && (
+        <AddTransactionModal
+          portfolioId={id}
+          onClose={() => setShowAddTx(false)}
+          onAdded={handleTxAdded}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Link href="/" className="text-terminal-dim hover:text-terminal-text text-sm">
-            ← Back
+          <Link href="/portfolios" className="text-terminal-dim hover:text-terminal-text text-sm">
+            ← Portfolios
           </Link>
           <h1 className="text-lg font-semibold text-terminal-text">
             Portfolio #{id}
@@ -109,16 +304,24 @@ export default function PortfolioDetailPage() {
             {s.quality.overall_quality}
           </span>
         </div>
-        <div className="toggle-group">
-          {MODES.map((m) => (
-            <button
-              key={m}
-              onClick={() => setReporting(m)}
-              className={cn("toggle-item", reporting === m && "toggle-item-active")}
-            >
-              {m}
-            </button>
-          ))}
+        <div className="flex items-center gap-3">
+          <div className="toggle-group">
+            {MODES.map((m) => (
+              <button
+                key={m}
+                onClick={() => setReporting(m)}
+                className={cn("toggle-item", reporting === m && "toggle-item-active")}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => setShowAddTx(true)}
+            className="px-3 py-1.5 text-xs bg-terminal-accent text-black font-medium rounded hover:opacity-90 transition-opacity"
+          >
+            + Add Transaction
+          </button>
         </div>
       </div>
 
@@ -319,14 +522,24 @@ export default function PortfolioDetailPage() {
       </div>
 
       {/* Recent Transactions */}
-      {transactions && transactions.data.length > 0 && (
-        <div className="card">
-          <div className="card-header">
-            <h2 className="text-sm font-semibold text-terminal-text">Recent Transactions</h2>
-            <span className="text-[10px] text-terminal-dim font-mono">
-              {transactions.total} total
-            </span>
+      <div className="card">
+        <div className="card-header">
+          <h2 className="text-sm font-semibold text-terminal-text">Recent Transactions</h2>
+          <div className="flex items-center gap-3">
+            {transactions && (
+              <span className="text-[10px] text-terminal-dim font-mono">
+                {transactions.total} total
+              </span>
+            )}
+            <button
+              onClick={() => setShowAddTx(true)}
+              className="text-[10px] text-terminal-accent hover:underline"
+            >
+              + Add Transaction
+            </button>
           </div>
+        </div>
+        {transactions && transactions.data.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -362,8 +575,21 @@ export default function PortfolioDetailPage() {
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="p-8 text-center">
+            <p className="text-terminal-dim text-sm">No transactions yet</p>
+            <p className="text-terminal-dim text-xs mt-1">
+              Add a BUY, SELL, DEPOSIT or DIVIDEND to start tracking performance
+            </p>
+            <button
+              onClick={() => setShowAddTx(true)}
+              className="mt-3 px-4 py-2 text-sm bg-terminal-accent text-black font-medium rounded hover:opacity-90 transition-opacity"
+            >
+              + Add First Transaction
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Quality + Freshness Footer */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

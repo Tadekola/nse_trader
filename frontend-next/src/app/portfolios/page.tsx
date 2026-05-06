@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { listPortfolios, getSummary } from "@/api/client";
+import { listPortfolios, getSummary, createPortfolio } from "@/api/client";
 import type { Portfolio, SummaryResponse, ReportingMode } from "@/api/types";
 import { fmtCurrency, fmtPctSigned, fmtDate, returnColor, cn } from "@/api/utils";
 
@@ -11,48 +11,160 @@ interface PortfolioRow extends Portfolio {
   loading: boolean;
 }
 
+function CreatePortfolioModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (p: Portfolio) => void;
+}) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [currency, setCurrency] = useState("NGN");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const p = await createPortfolio({
+        name: name.trim(),
+        description: description.trim() || undefined,
+        base_currency: currency,
+      });
+      onCreated(p);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create portfolio");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="bg-terminal-bg border border-terminal-border rounded-lg w-full max-w-md p-6 shadow-xl">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-base font-semibold text-terminal-text">New Portfolio</h2>
+          <button onClick={onClose} className="text-terminal-dim hover:text-terminal-text text-xl leading-none">×</button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs text-terminal-dim mb-1">Portfolio Name *</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. My NGX Portfolio"
+              className="w-full bg-terminal-surface border border-terminal-border rounded px-3 py-2 text-sm text-terminal-text placeholder-terminal-dim focus:outline-none focus:border-terminal-accent"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-terminal-dim mb-1">Description (optional)</label>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="e.g. Long-term dividend stocks"
+              className="w-full bg-terminal-surface border border-terminal-border rounded px-3 py-2 text-sm text-terminal-text placeholder-terminal-dim focus:outline-none focus:border-terminal-accent"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-terminal-dim mb-1">Base Currency</label>
+            <select
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+              className="w-full bg-terminal-surface border border-terminal-border rounded px-3 py-2 text-sm text-terminal-text focus:outline-none focus:border-terminal-accent"
+            >
+              <option value="NGN">NGN — Nigerian Naira</option>
+              <option value="USD">USD — US Dollar</option>
+            </select>
+          </div>
+          {error && (
+            <p className="text-xs text-terminal-red">{error}</p>
+          )}
+          <div className="flex gap-3 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 text-sm border border-terminal-border rounded text-terminal-dim hover:text-terminal-text transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting || !name.trim()}
+              className="flex-1 px-4 py-2 text-sm bg-terminal-accent text-black font-medium rounded hover:opacity-90 disabled:opacity-50 transition-opacity"
+            >
+              {submitting ? "Creating..." : "Create Portfolio"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function PortfoliosPage() {
   const [portfolios, setPortfolios] = useState<PortfolioRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [reporting, setReporting] = useState<ReportingMode>("NGN");
+  const [showCreate, setShowCreate] = useState(false);
+
+  async function loadPortfolios(mode: ReportingMode) {
+    setLoading(true);
+    try {
+      const list = await listPortfolios();
+      const rows: PortfolioRow[] = list.data.map((p) => ({
+        ...p,
+        summary: null,
+        loading: true,
+      }));
+      setPortfolios(rows);
+      setLoading(false);
+
+      const summaries = await Promise.allSettled(
+        list.data.map((p) => getSummary(p.id, mode)),
+      );
+
+      setPortfolios((prev) =>
+        prev.map((row, i) => ({
+          ...row,
+          summary:
+            summaries[i].status === "fulfilled"
+              ? summaries[i].value
+              : null,
+          loading: false,
+        })),
+      );
+    } catch {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function load() {
-      try {
-        const list = await listPortfolios();
-        const rows: PortfolioRow[] = list.data.map((p) => ({
-          ...p,
-          summary: null,
-          loading: true,
-        }));
-        setPortfolios(rows);
-        setLoading(false);
-
-        const summaries = await Promise.allSettled(
-          list.data.map((p) => getSummary(p.id, reporting)),
-        );
-
-        setPortfolios((prev) =>
-          prev.map((row, i) => ({
-            ...row,
-            summary:
-              summaries[i].status === "fulfilled"
-                ? summaries[i].value
-                : null,
-            loading: false,
-          })),
-        );
-      } catch {
-        setLoading(false);
-      }
-    }
-    load();
+    loadPortfolios(reporting);
   }, [reporting]);
+
+  function handleCreated(p: Portfolio) {
+    setShowCreate(false);
+    setPortfolios((prev) => [{ ...p, summary: null, loading: false }, ...prev]);
+  }
 
   const MODES: ReportingMode[] = ["NGN", "USD", "REAL_NGN"];
 
   return (
     <div className="space-y-6">
+      {showCreate && (
+        <CreatePortfolioModal
+          onClose={() => setShowCreate(false)}
+          onCreated={handleCreated}
+        />
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold text-terminal-text">Portfolios</h1>
@@ -60,16 +172,24 @@ export default function PortfoliosPage() {
             {portfolios.length} portfolio{portfolios.length !== 1 ? "s" : ""} tracked
           </p>
         </div>
-        <div className="toggle-group">
-          {MODES.map((m) => (
-            <button
-              key={m}
-              onClick={() => setReporting(m)}
-              className={cn("toggle-item", reporting === m && "toggle-item-active")}
-            >
-              {m}
-            </button>
-          ))}
+        <div className="flex items-center gap-3">
+          <div className="toggle-group">
+            {MODES.map((m) => (
+              <button
+                key={m}
+                onClick={() => setReporting(m)}
+                className={cn("toggle-item", reporting === m && "toggle-item-active")}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="px-3 py-1.5 text-xs bg-terminal-accent text-black font-medium rounded hover:opacity-90 transition-opacity"
+          >
+            + New Portfolio
+          </button>
         </div>
       </div>
 
@@ -96,8 +216,14 @@ export default function PortfoliosPage() {
               </tr>
             ) : portfolios.length === 0 ? (
               <tr>
-                <td colSpan={8} className="table-cell text-center text-terminal-dim py-12">
-                  No portfolios yet
+                <td colSpan={8} className="table-cell text-center py-16">
+                  <p className="text-terminal-dim text-sm">No portfolios yet</p>
+                  <button
+                    onClick={() => setShowCreate(true)}
+                    className="mt-3 px-4 py-2 text-sm bg-terminal-accent text-black font-medium rounded hover:opacity-90 transition-opacity"
+                  >
+                    + Create your first portfolio
+                  </button>
                 </td>
               </tr>
             ) : (

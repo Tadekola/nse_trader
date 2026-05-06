@@ -151,6 +151,48 @@ export async function getDecomposition(
   );
 }
 
+export async function createPortfolio(body: {
+  name: string;
+  description?: string;
+  base_currency?: string;
+}): Promise<Portfolio> {
+  const res = await fetch(`${BASE}/portfolios`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Create portfolio failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  return res.json() as Promise<Portfolio>;
+}
+
+export async function addTransactions(
+  portfolioId: number,
+  transactions: {
+    ts: string;
+    tx_type: string;
+    symbol?: string;
+    quantity?: number;
+    price_ngn?: number;
+    amount_ngn: number;
+    fees_ngn?: number;
+    notes?: string;
+  }[],
+): Promise<{ added: number }> {
+  const res = await fetch(`${BASE}/portfolios/${portfolioId}/transactions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ transactions }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Add transaction failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  return res.json() as Promise<{ added: number }>;
+}
+
 // ── Transactions ────────────────────────────────────────────────────
 
 export async function listTransactions(
