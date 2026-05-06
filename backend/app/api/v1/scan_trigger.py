@@ -14,8 +14,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.db.engine import get_async_session
+from app.db.models import AuditEvent
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +92,9 @@ class ScanLatestResponse(BaseModel):
 # ── POST /trigger ─────────────────────────────────────────────────────
 
 @router.post("/trigger", response_model=ScanTriggerResponse)
-async def trigger_scan():
+async def trigger_scan(
+    session: AsyncSession = Depends(get_async_session),
+):
     """
     Trigger a fresh OHLCV data fetch and metadata refresh.
     Runs fetch_real_ohlcv.py as a subprocess, then refreshes symbol_metadata.
@@ -195,6 +200,25 @@ async def trigger_scan():
             conn.close()
         except Exception as e:
             logger.error("Failed to log scan history: %s", e)
+
+        # Step 4: Write audit event
+        try:
+            session.add(AuditEvent(
+                component="scanner",
+                event_type="OHLCV_SCAN_COMPLETED" if success else "OHLCV_SCAN_FAILED",
+                level="INFO" if success else "WARN",
+                message=message,
+                payload={
+                    "symbols_fetched": symbols_fetched,
+                    "symbols_total": symbols_total,
+                    "latest_date": latest_date,
+                    "duration_seconds": duration,
+                    "warnings": warnings,
+                },
+            ))
+            await session.commit()
+        except Exception as e:
+            logger.error("Failed to write audit event: %s", e)
 
         return ScanTriggerResponse(
             success=success,

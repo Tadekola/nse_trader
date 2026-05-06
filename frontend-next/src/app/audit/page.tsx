@@ -14,6 +14,7 @@ export default function AuditPage() {
     level: "",
   });
   const [page, setPage] = useState(0);
+  const [refresh, setRefresh] = useState(0);
   const LIMIT = 50;
 
   useEffect(() => {
@@ -34,7 +35,7 @@ export default function AuditPage() {
       setLoading(false);
     }
     load();
-  }, [filters, page]);
+  }, [filters, page, refresh]);
 
   const levelColor = (level: string) => {
     switch (level.toUpperCase()) {
@@ -54,7 +55,13 @@ export default function AuditPage() {
             {events?.total ?? 0} events
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <button
+            onClick={() => { setPage(0); setRefresh((r) => r + 1); }}
+            className="btn-ghost text-xs"
+          >
+            ↻ Refresh
+          </button>
           <a
             href="/api/v1/audit/events/csv"
             className="btn-ghost text-xs"
@@ -73,6 +80,7 @@ export default function AuditPage() {
           className="bg-terminal-surface border border-terminal-border rounded px-2 py-1.5 text-xs font-mono text-terminal-text"
         >
           <option value="">All Components</option>
+          <option value="scanner">scanner</option>
           <option value="portfolio">portfolio</option>
           <option value="ingestion">ingestion</option>
           <option value="scheduler">scheduler</option>
