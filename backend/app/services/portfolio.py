@@ -180,6 +180,10 @@ class PortfolioService:
         """
         # Sort by date, then by a stable order
         sorted_txs = sorted(transactions, key=lambda t: t["ts"])
+        tracks_cash = any(
+            t.get("tx_type", "").upper() in ("CASH_IN", "CASH_OUT")
+            for t in sorted_txs
+        )
 
         holdings: Dict[str, Holding] = {}
         cash_ngn = 0.0
@@ -213,7 +217,8 @@ class PortfolioService:
                         avg_cost_ngn=cost / quantity if quantity > 0 else 0,
                         total_cost_ngn=cost,
                     )
-                cash_ngn -= cost
+                if tracks_cash:
+                    cash_ngn -= cost
 
             elif tx_type == "SELL":
                 proceeds = quantity * price - fees
@@ -227,7 +232,8 @@ class PortfolioService:
                     if h.quantity <= 1e-9:
                         # Position fully closed
                         del holdings[symbol]
-                cash_ngn += proceeds
+                if tracks_cash:
+                    cash_ngn += proceeds
 
             elif tx_type == "DIVIDEND":
                 cash_ngn += amount
@@ -279,7 +285,7 @@ class PortfolioService:
                 gain_pct = (gain_loss / holding.total_cost_ngn * 100
                            if holding.total_cost_ngn > 0 else 0.0)
             else:
-                market_value = 0.0
+                market_value = holding.total_cost_ngn
                 gain_loss = 0.0
                 gain_pct = 0.0
                 missing_prices += 1

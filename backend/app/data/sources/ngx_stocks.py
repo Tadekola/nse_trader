@@ -26,6 +26,7 @@ class Sector(str, Enum):
     CONSTRUCTION = "Construction"
     SERVICES = "Services"
     NATURAL_RESOURCES = "Natural Resources"
+    ETF = "ETF"
 
 
 @dataclass
@@ -105,6 +106,14 @@ class NGXStockRegistry:
             market_cap_billions=390.25,
             shares_outstanding=12_879_000_000,
             liquidity_tier='medium'
+        ),
+        'STANBICETF30': StockInfo(
+            symbol='STANBICETF30',
+            name='Stanbic IBTC ETF 30',
+            sector=Sector.ETF,
+            market_cap_billions=0.0,
+            shares_outstanding=0,
+            liquidity_tier='low'
         ),
         'FIDELITYBK': StockInfo(
             symbol='FIDELITYBK',

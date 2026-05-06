@@ -267,6 +267,14 @@ class TestCashBalance:
         snap = svc.compute_holdings(txs)
         assert abs(snap.cash_ngn - 65000.0) < 0.01
 
+    def test_direct_holdings_do_not_create_negative_cash(self, svc):
+        txs = [
+            {"ts": date(2024, 1, 2), "tx_type": "BUY", "symbol": "DANGCEM",
+             "quantity": 100, "price_ngn": 350.0, "amount_ngn": 35000, "fees_ngn": 0},
+        ]
+        snap = svc.compute_holdings(txs)
+        assert snap.cash_ngn == 0.0
+
     def test_cash_out(self, svc):
         txs = [
             {"ts": date(2024, 1, 1), "tx_type": "CASH_IN", "amount_ngn": 100000, "fees_ngn": 0},
@@ -364,6 +372,8 @@ class TestValuation:
         snap = svc.compute_holdings(SAMPLE_TRANSACTIONS, as_of=date(2024, 1, 3))
         val = svc.compute_valuation(snap, {})
         assert val.data_quality == "PRICE_MISSING"
+        assert abs(val.holdings_value_ngn - 55275.0) < 0.01
+        assert all(not pos["price_available"] for pos in val.positions)
 
     def test_valuation_gain_loss(self, svc):
         txs = [

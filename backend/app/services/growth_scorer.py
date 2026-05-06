@@ -72,6 +72,10 @@ SECTOR_MACRO_ALIGNMENT: Dict[str, float] = {
     # Services: logistics, real estate (urbanisation), tourism
     Sector.SERVICES.value: 0.60,
 
+    # ETFs: diversified market exposure; neutral macro alignment because
+    # growth depends on the constituent basket rather than a single sector.
+    Sector.ETF.value: 0.50,
+
     # Conglomerates: diversified but often unfocused, restructuring trend
     Sector.CONGLOMERATES.value: 0.55,
 }
