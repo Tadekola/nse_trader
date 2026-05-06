@@ -77,6 +77,17 @@ export async function getPortfolio(id: number): Promise<Portfolio> {
   return fetchJSON<Portfolio>(`${BASE}/portfolios/${id}`);
 }
 
+export async function deletePortfolio(
+  id: number,
+): Promise<{ deleted: boolean; portfolio_id: number }> {
+  const res = await fetch(`${BASE}/portfolios/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Delete portfolio failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  return res.json() as Promise<{ deleted: boolean; portfolio_id: number }>;
+}
+
 // ── Holdings ────────────────────────────────────────────────────────
 
 export async function getHoldings(

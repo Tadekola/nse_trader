@@ -1,16 +1,19 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
+  getPortfolio,
   getSummary,
   getTimeseries,
   getDecomposition,
   listTransactions,
   addTransactions,
+  deletePortfolio,
 } from "@/api/client";
 import type {
+  Portfolio,
   SummaryResponse,
   TimeseriesResponse,
   DecompositionResponse,
@@ -30,7 +33,14 @@ import {
 } from "@/api/utils";
 import { TimeseriesChart } from "@/components/charts/timeseries-chart";
 
-const TX_TYPES = ["BUY", "SELL", "DIVIDEND", "DEPOSIT", "WITHDRAWAL", "FEE"];
+const TX_TYPES = [
+  { value: "BUY", label: "Buy stock" },
+  { value: "SELL", label: "Sell stock" },
+  { value: "DIVIDEND", label: "Dividend" },
+  { value: "CASH_IN", label: "Deposit cash" },
+  { value: "CASH_OUT", label: "Withdraw cash" },
+  { value: "FEE", label: "Fee" },
+];
 
 function AddTransactionModal({
   portfolioId,
@@ -99,7 +109,7 @@ function AddTransactionModal({
                 onChange={(e) => setTxType(e.target.value)}
                 className="w-full bg-terminal-surface border border-terminal-border rounded px-3 py-2 text-sm text-terminal-text focus:outline-none focus:border-terminal-accent"
               >
-                {TX_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                {TX_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </div>
             <div>
@@ -212,30 +222,41 @@ function AddTransactionModal({
 
 export default function PortfolioDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const id = Number(params.id);
 
   const [reporting, setReporting] = useState<ReportingMode>("NGN");
+  const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [timeseries, setTimeseries] = useState<TimeseriesResponse | null>(null);
   const [decomposition, setDecomposition] = useState<DecompositionResponse | null>(null);
   const [transactions, setTransactions] = useState<TransactionList | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showAddTx, setShowAddTx] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
-      const [s, ts, txs] = await Promise.all([
-        getSummary(id, reporting),
-        getTimeseries(id, reporting),
+      const [p, txs] = await Promise.all([
+        getPortfolio(id),
         listTransactions(id, { limit: 20 }),
       ]);
-      setSummary(s);
-      setTimeseries(ts);
+      setPortfolio(p);
       setTransactions(txs);
 
+      const [summaryResult, timeseriesResult] = await Promise.allSettled([
+        getSummary(id, reporting),
+        getTimeseries(id, reporting),
+      ]);
+      const s = summaryResult.status === "fulfilled" ? summaryResult.value : null;
+      const ts = timeseriesResult.status === "fulfilled" ? timeseriesResult.value : null;
+      setSummary(s);
+      setTimeseries(ts);
+
       // Decomposition only for USD/REAL_NGN
-      if (reporting !== "NGN") {
+      if (reporting !== "NGN" && s) {
         const d = await getDecomposition(id, reporting);
         setDecomposition(d);
       } else {
@@ -243,6 +264,12 @@ export default function PortfolioDetailPage() {
       }
     } catch (err) {
       console.error("Failed to load portfolio:", err);
+      setLoadError(err instanceof Error ? err.message : "Failed to load portfolio");
+      setPortfolio(null);
+      setSummary(null);
+      setTimeseries(null);
+      setTransactions(null);
+      setDecomposition(null);
     }
     setLoading(false);
   }, [id, reporting]);
@@ -256,7 +283,16 @@ export default function PortfolioDetailPage() {
     load();
   }
 
-  if (loading && !summary) {
+  async function handleDelete() {
+    if (!portfolio) return;
+    if (!window.confirm(`Delete portfolio "${portfolio.name}" and all of its transactions?`)) {
+      return;
+    }
+    await deletePortfolio(id);
+    router.push("/portfolios");
+  }
+
+  if (loading && !portfolio) {
     return (
       <div className="flex items-center justify-center h-64">
         <span className="text-terminal-dim font-mono">Loading portfolio {id}...</span>
@@ -264,19 +300,79 @@ export default function PortfolioDetailPage() {
     );
   }
 
-  if (!summary) {
+  if (!portfolio) {
     return (
       <div className="flex items-center justify-center h-64">
-        <span className="text-terminal-red font-mono">Portfolio {id} not found or has no data</span>
+        <span className="text-terminal-red font-mono">{loadError ?? `Portfolio ${id} not found`}</span>
+      </div>
+    );
+  }
+
+  if (!summary) {
+    return (
+      <div className="space-y-6">
+        {showAddTx && (
+          <AddTransactionModal
+            portfolioId={id}
+            onClose={() => setShowAddTx(false)}
+            onAdded={handleTxAdded}
+          />
+        )}
+
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Link href="/portfolios" className="text-terminal-dim hover:text-terminal-text text-sm">
+              Back to portfolios
+            </Link>
+            <h1 className="text-lg font-semibold text-terminal-text">{portfolio.name}</h1>
+            <span className="badge badge-dim">No holdings</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowAddTx(true)}
+              className="px-3 py-1.5 text-xs bg-terminal-accent text-black font-medium rounded hover:opacity-90 transition-opacity"
+            >
+              + Add Transaction
+            </button>
+            <button
+              onClick={handleDelete}
+              className="px-3 py-1.5 text-xs border border-terminal-red/40 text-terminal-red rounded hover:bg-terminal-red/10 transition-colors"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-body text-center py-12">
+            <p className="text-terminal-dim text-sm">No holdings yet</p>
+            <p className="text-terminal-dim text-xs mt-1">
+              Add a cash deposit or a buy transaction to start tracking this portfolio.
+            </p>
+            <button
+              onClick={() => setShowAddTx(true)}
+              className="mt-4 px-4 py-2 text-sm bg-terminal-accent text-black font-medium rounded hover:opacity-90 transition-opacity"
+            >
+              + Add First Transaction
+            </button>
+          </div>
+        </div>
+
+        {transactions && transactions.data.length > 0 && (
+          <RecentTransactions
+            transactions={transactions}
+            onAdd={() => setShowAddTx(true)}
+          />
+        )}
       </div>
     );
   }
 
   const s = summary;
-  const ytd = s.returns.find((r) => r.label === "YTD");
-  const oneY = s.returns.find((r) => r.label === "1Y");
-  const threeY = s.returns.find((r) => r.label === "3Y");
-  const inception = s.returns.find((r) => r.label === "SINCE_INCEPTION");
+  const ytd = s?.returns.find((r) => r.label === "YTD");
+  const oneY = s?.returns.find((r) => r.label === "1Y");
+  const threeY = s?.returns.find((r) => r.label === "3Y");
+  const inception = s?.returns.find((r) => r.label === "SINCE_INCEPTION");
 
   return (
     <div className="space-y-6">
@@ -295,7 +391,7 @@ export default function PortfolioDetailPage() {
             ← Portfolios
           </Link>
           <h1 className="text-lg font-semibold text-terminal-text">
-            Portfolio #{id}
+            {portfolio.name}
           </h1>
           <span className={cn(
             "badge",
@@ -321,6 +417,12 @@ export default function PortfolioDetailPage() {
             className="px-3 py-1.5 text-xs bg-terminal-accent text-black font-medium rounded hover:opacity-90 transition-opacity"
           >
             + Add Transaction
+          </button>
+          <button
+            onClick={handleDelete}
+            className="px-3 py-1.5 text-xs border border-terminal-red/40 text-terminal-red rounded hover:bg-terminal-red/10 transition-colors"
+          >
+            Delete
           </button>
         </div>
       </div>
@@ -627,6 +729,82 @@ export default function PortfolioDetailPage() {
 }
 
 // ── Sub-components ──────────────────────────────────────────────────
+
+function RecentTransactions({
+  transactions,
+  onAdd,
+}: {
+  transactions: TransactionList | null;
+  onAdd: () => void;
+}) {
+  return (
+    <div className="card">
+      <div className="card-header">
+        <h2 className="text-sm font-semibold text-terminal-text">Recent Transactions</h2>
+        <div className="flex items-center gap-3">
+          {transactions && (
+            <span className="text-[10px] text-terminal-dim font-mono">
+              {transactions.total} total
+            </span>
+          )}
+          <button
+            onClick={onAdd}
+            className="text-[10px] text-terminal-accent hover:underline"
+          >
+            + Add Transaction
+          </button>
+        </div>
+      </div>
+      {transactions && transactions.data.length > 0 ? (
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-terminal-border">
+                <th className="table-header">Date</th>
+                <th className="table-header">Type</th>
+                <th className="table-header">Symbol</th>
+                <th className="table-header text-right">Qty</th>
+                <th className="table-header text-right">Price</th>
+                <th className="table-header text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {transactions.data.map((tx) => (
+                <tr key={tx.id} className="table-row">
+                  <td className="table-cell text-xs">{fmtDate(tx.ts)}</td>
+                  <td className="table-cell">
+                    <span className={cn(
+                      "badge",
+                      tx.tx_type === "BUY" ? "badge-green" :
+                      tx.tx_type === "SELL" ? "badge-red" :
+                      tx.tx_type === "DIVIDEND" ? "badge-blue" : "badge-dim",
+                    )}>
+                      {tx.tx_type}
+                    </span>
+                  </td>
+                  <td className="table-cell">{tx.symbol ?? "-"}</td>
+                  <td className="table-cell text-right">{tx.quantity ? fmtShares(tx.quantity) : "-"}</td>
+                  <td className="table-cell text-right">{tx.price_ngn ? fmtCurrency(tx.price_ngn, "NGN", true) : "-"}</td>
+                  <td className="table-cell text-right">{fmtCurrency(tx.amount_ngn, "NGN")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="p-8 text-center">
+          <p className="text-terminal-dim text-sm">No transactions yet</p>
+          <button
+            onClick={onAdd}
+            className="mt-3 px-4 py-2 text-sm bg-terminal-accent text-black font-medium rounded hover:opacity-90 transition-opacity"
+          >
+            + Add First Transaction
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function StatCard({
   label,

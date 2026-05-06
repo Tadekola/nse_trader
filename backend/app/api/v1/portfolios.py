@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.engine import get_async_session
@@ -146,6 +146,30 @@ async def get_portfolio(
     if not row:
         raise HTTPException(404, f"Portfolio {portfolio_id} not found")
     return _row_to_dict(row)
+
+
+# ── DELETE /portfolios/{id} ─────────────────────────────────────────────
+
+@router.delete("/{portfolio_id}")
+async def delete_portfolio(
+    portfolio_id: int,
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Delete a portfolio and all of its transactions."""
+    row = (await session.execute(
+        select(Portfolio).where(Portfolio.id == portfolio_id)
+    )).scalar_one_or_none()
+    if not row:
+        raise HTTPException(404, f"Portfolio {portfolio_id} not found")
+
+    await session.execute(
+        delete(PortfolioTransaction).where(
+            PortfolioTransaction.portfolio_id == portfolio_id
+        )
+    )
+    await session.delete(row)
+    await session.commit()
+    return {"deleted": True, "portfolio_id": portfolio_id}
 
 
 # ── POST /portfolios/{id}/transactions ────────────────────────────────

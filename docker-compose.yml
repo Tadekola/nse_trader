@@ -69,6 +69,12 @@ services:
     container_name: nse_trader_scheduler
     restart: unless-stopped
     entrypoint: ["python", "scheduler.py"]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"from pathlib import Path; import sys; sys.exit(0 if any('scheduler.py' in p.read_text(errors='ignore') for p in Path('/proc').glob('[0-9]*/cmdline')) else 1)\""]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
     volumes:
       - ./backend/data:/app/data
     environment:

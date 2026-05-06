@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { listPortfolios, getSummary, createPortfolio } from "@/api/client";
+import { listPortfolios, getSummary, createPortfolio, deletePortfolio } from "@/api/client";
 import type { Portfolio, SummaryResponse, ReportingMode } from "@/api/types";
 import { fmtCurrency, fmtPctSigned, fmtDate, returnColor, cn } from "@/api/utils";
 
@@ -154,6 +154,14 @@ export default function PortfoliosPage() {
     setPortfolios((prev) => [{ ...p, summary: null, loading: false }, ...prev]);
   }
 
+  async function handleDelete(id: number, name: string) {
+    if (!window.confirm(`Delete portfolio "${name}" and all of its transactions?`)) {
+      return;
+    }
+    await deletePortfolio(id);
+    setPortfolios((prev) => prev.filter((row) => row.id !== id));
+  }
+
   const MODES: ReportingMode[] = ["NGN", "USD", "REAL_NGN"];
 
   return (
@@ -205,18 +213,19 @@ export default function PortfoliosPage() {
               <th className="table-header text-right">Drawdown</th>
               <th className="table-header text-right">Positions</th>
               <th className="table-header text-center">Quality</th>
+              <th className="table-header text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={8} className="table-cell text-center text-terminal-dim py-12">
+                <td colSpan={9} className="table-cell text-center text-terminal-dim py-12">
                   Loading portfolios...
                 </td>
               </tr>
             ) : portfolios.length === 0 ? (
               <tr>
-                <td colSpan={8} className="table-cell text-center py-16">
+                <td colSpan={9} className="table-cell text-center py-16">
                   <p className="text-terminal-dim text-sm">No portfolios yet</p>
                   <button
                     onClick={() => setShowCreate(true)}
@@ -275,6 +284,14 @@ export default function PortfoliosPage() {
                           {s.quality.overall_quality}
                         </span>
                       ) : <span className="badge badge-dim">N/A</span>}
+                    </td>
+                    <td className="table-cell text-right">
+                      <button
+                        onClick={() => handleDelete(row.id, row.name)}
+                        className="px-2 py-1 text-[10px] border border-terminal-red/40 text-terminal-red rounded hover:bg-terminal-red/10 transition-colors"
+                      >
+                        Delete
+                      </button>
                     </td>
                   </tr>
                 );

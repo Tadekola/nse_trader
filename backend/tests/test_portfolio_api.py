@@ -247,6 +247,33 @@ class TestGetPortfolio:
 # ── 4. Add Transactions ─────────────────────────────────────────────
 
 
+class TestDeletePortfolio:
+
+    @pytest.mark.asyncio
+    async def test_delete_portfolio_removes_transactions(self, app_with_session):
+        async with AsyncClient(
+            transport=ASGITransport(app=app_with_session), base_url="http://test"
+        ) as client:
+            resp = await client.delete("/api/v1/portfolios/1")
+            assert resp.status_code == 200
+            assert resp.json() == {"deleted": True, "portfolio_id": 1}
+
+            missing = await client.get("/api/v1/portfolios/1")
+            assert missing.status_code == 404
+
+            txs = await client.get("/api/v1/portfolios/1/transactions")
+            assert txs.status_code == 200
+            assert txs.json()["total"] == 0
+
+    @pytest.mark.asyncio
+    async def test_delete_missing_portfolio_404(self, app_with_session):
+        async with AsyncClient(
+            transport=ASGITransport(app=app_with_session), base_url="http://test"
+        ) as client:
+            resp = await client.delete("/api/v1/portfolios/999")
+        assert resp.status_code == 404
+
+
 class TestAddTransactions:
 
     @pytest.mark.asyncio
