@@ -204,6 +204,7 @@ async def trigger_scan(
         # Step 4: Write audit event
         try:
             session.add(AuditEvent(
+                ts=datetime.utcnow(),
                 component="scanner",
                 event_type="OHLCV_SCAN_COMPLETED" if success else "OHLCV_SCAN_FAILED",
                 level="INFO" if success else "WARN",
