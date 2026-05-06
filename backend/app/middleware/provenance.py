@@ -1,26 +1,10 @@
 """
-Provenance Completeness Enforcement Middleware (P3-3).
+Provenance completeness enforcement middleware.
 
-Inspects JSON responses from recommendation/signal endpoints and asserts
-that all required provenance fields are present.
-
-Required provenance fields on any recommendation/signal data item:
-  - confidence_score   (float, 0-1)
-  - status             ("ACTIVE" / "SUPPRESSED" / "NO_TRADE")
-  - data_confidence    (dict with sub-scores) OR confidence (float)
-
-When a response fails the provenance check:
-  - DEV mode (ENV != "production"): returns HTTP 500 with diagnostic detail
-  - PROD mode: rewrites the response to a NO_TRADE fail-safe and writes
-    an audit_event
-
-An audit_event is always written on provenance failure regardless of mode.
-
-Configuration:
-  PROVENANCE_ENFORCEMENT = "on" | "off"   (default: "on")
-  ENV = "production" | "development"      (default: "development")
-
-The middleware only applies to paths under /api/v1/recommendations.
+Inspects JSON responses from recommendation endpoints and asserts that every
+recommendation item carries the required provenance fields. In development it
+fails loudly with a diagnostic 500; in production it rewrites unsafe responses
+to a NO_TRADE fail-safe and records an audit event.
 """
 
 import json
@@ -29,24 +13,18 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 
-from fastapi import Request, Response
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 logger = logging.getLogger(__name__)
 
-# Paths that require provenance enforcement
-ENFORCED_PATH_PREFIXES = (
-    "/api/v1/recommendations",
-)
+ENFORCED_PATH_PREFIXES = ("/api/v1/recommendations",)
 
-# Required fields at the item level (each recommendation dict)
 REQUIRED_ITEM_FIELDS: Set[str] = {
     "confidence_score",
     "status",
 }
 
-# At least one of these must be present for provenance depth
 PROVENANCE_DEPTH_FIELDS: Set[str] = {
     "data_confidence",
     "confidence",
@@ -55,18 +33,13 @@ PROVENANCE_DEPTH_FIELDS: Set[str] = {
 
 
 def _check_item_provenance(item: Dict[str, Any]) -> List[str]:
-    """
-    Check a single recommendation/signal dict for provenance completeness.
-
-    Returns a list of violation descriptions (empty = pass).
-    """
+    """Check a single recommendation/signal dict for provenance completeness."""
     violations: List[str] = []
 
     for field in REQUIRED_ITEM_FIELDS:
         if field not in item or item[field] is None:
             violations.append(f"missing required field '{field}'")
 
-    # At least one depth field must be present
     if not any(item.get(f) is not None for f in PROVENANCE_DEPTH_FIELDS):
         violations.append(
             f"missing all provenance depth fields ({', '.join(sorted(PROVENANCE_DEPTH_FIELDS))})"
@@ -77,12 +50,8 @@ def _check_item_provenance(item: Dict[str, Any]) -> List[str]:
 
 def _extract_items(body: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
-    Extract recommendation/signal items from a response body.
-
-    Handles:
-      - {"data": [...]}          (list response)
-      - {"data": {<single>}}     (single response)
-      - {"recommendations": {horizon: {...}}}  (all-horizons)
+    Extract recommendation/signal items from supported response shapes:
+    {"data": [...]}, {"data": {...}}, and {"recommendations": {horizon: {...}}}.
     """
     items: List[Dict[str, Any]] = []
 
@@ -94,16 +63,14 @@ def _extract_items(body: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     recs = body.get("recommendations")
     if isinstance(recs, dict):
-        for v in recs.values():
-            if isinstance(v, dict):
-                items.append(v)
+        for value in recs.values():
+            if isinstance(value, dict):
+                items.append(value)
 
     return items
 
 
-def _build_no_trade_response(
-    path: str, violations: List[str]
-) -> Dict[str, Any]:
+def _build_no_trade_response(path: str, violations: List[str]) -> Dict[str, Any]:
     """Build a NO_TRADE fail-safe response body."""
     return {
         "success": True,
@@ -127,9 +94,7 @@ def _build_no_trade_response(
     }
 
 
-def _build_audit_event(
-    path: str, violations: List[str], mode: str
-) -> Dict[str, Any]:
+def _build_audit_event(path: str, violations: List[str], mode: str) -> Dict[str, Any]:
     """Build an audit event dict for provenance failure."""
     return {
         "component": "provenance_enforcement",
@@ -145,100 +110,99 @@ def _build_audit_event(
     }
 
 
-class ProvenanceEnforcementMiddleware(BaseHTTPMiddleware):
+class ProvenanceEnforcementMiddleware:
     """
-    Middleware that enforces provenance completeness on recommendation responses.
+    Pure ASGI middleware for provenance enforcement.
+
+    It buffers only recommendation JSON responses, so it avoids the request-body
+    handling issues that can occur with BaseHTTPMiddleware.
     """
 
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
-        path = request.url.path
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
 
-        # Only enforce on recommendation paths
-        if not any(path.startswith(p) for p in ENFORCED_PATH_PREFIXES):
-            return await call_next(request)
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
 
-        # Skip if enforcement is disabled
-        enforcement = os.environ.get("PROVENANCE_ENFORCEMENT", "on").lower()
-        if enforcement == "off":
-            return await call_next(request)
+        path = scope.get("path", "")
+        if not any(path.startswith(prefix) for prefix in ENFORCED_PATH_PREFIXES):
+            await self.app(scope, receive, send)
+            return
 
-        response = await call_next(request)
+        if os.environ.get("PROVENANCE_ENFORCEMENT", "on").lower() == "off":
+            await self.app(scope, receive, send)
+            return
 
-        # Only check JSON 200 responses
-        if response.status_code != 200:
-            return response
+        start_message: Optional[Message] = None
+        body_chunks: list[bytes] = []
 
-        content_type = response.headers.get("content-type", "")
-        if "application/json" not in content_type:
-            return response
+        async def capture_send(message: Message) -> None:
+            nonlocal start_message
+            if message["type"] == "http.response.start":
+                start_message = message
+                return
+            if message["type"] == "http.response.body":
+                chunk = message.get("body", b"")
+                if chunk:
+                    body_chunks.append(chunk)
+                return
+            await send(message)
 
-        # Read the response body
-        body_bytes = b""
-        async for chunk in response.body_iterator:
-            if isinstance(chunk, bytes):
-                body_bytes += chunk
-            else:
-                body_bytes += chunk.encode("utf-8")
+        await self.app(scope, receive, capture_send)
+
+        if start_message is None:
+            return
+
+        body_bytes = b"".join(body_chunks)
+        status_code = int(start_message.get("status", 500))
+        headers = list(start_message.get("headers", []))
+        header_map = {
+            key.decode("latin-1").lower(): value.decode("latin-1")
+            for key, value in headers
+        }
+
+        if status_code != 200 or "application/json" not in header_map.get("content-type", ""):
+            await _send_original(send, start_message, body_bytes)
+            return
 
         try:
-            body = json.loads(body_bytes)
+            parsed_body = json.loads(body_bytes)
         except (json.JSONDecodeError, UnicodeDecodeError):
-            return Response(
-                content=body_bytes,
-                status_code=response.status_code,
-                headers=dict(response.headers),
-            )
+            await _send_original(send, start_message, body_bytes)
+            return
 
-        # Extract and check items
-        items = _extract_items(body)
-
-        # Skip check if no items found (e.g., market-regime endpoint)
+        items = _extract_items(parsed_body)
         if not items:
-            return Response(
-                content=body_bytes,
-                status_code=response.status_code,
-                headers=dict(response.headers),
-                media_type="application/json",
-            )
+            await _send_original(send, start_message, body_bytes)
+            return
 
         all_violations: List[str] = []
         for item in items:
-            violations = _check_item_provenance(item)
-            all_violations.extend(violations)
+            all_violations.extend(_check_item_provenance(item))
 
         if not all_violations:
-            # Pass — return original response
-            return Response(
-                content=body_bytes,
-                status_code=response.status_code,
-                headers=dict(response.headers),
-                media_type="application/json",
-            )
-
-        # ── Provenance violation detected ──
+            await _send_original(send, start_message, body_bytes)
+            return
 
         mode = os.environ.get("ENV", "development").lower()
         audit_event = _build_audit_event(path, all_violations, mode)
 
-        # Persist audit event (best-effort, non-blocking)
         try:
             await _persist_audit(audit_event)
-        except Exception as e:
-            logger.error("Failed to persist provenance audit: %s", e)
+        except Exception as exc:
+            logger.error("Failed to persist provenance audit: %s", exc)
 
-        logger.warning(
-            "Provenance violation on %s: %s", path, "; ".join(all_violations)
-        )
+        logger.warning("Provenance violation on %s: %s", path, "; ".join(all_violations))
 
         if mode == "production":
-            # PROD: NO_TRADE fail-safe
-            no_trade = _build_no_trade_response(path, all_violations)
-            return JSONResponse(content=no_trade, status_code=200)
+            response = JSONResponse(
+                content=_build_no_trade_response(path, all_violations),
+                status_code=200,
+            )
         else:
-            # DEV: 500 with diagnostic
-            return JSONResponse(
+            response = JSONResponse(
                 content={
                     "error": "provenance_enforcement_failure",
                     "detail": "Response missing required provenance fields",
@@ -247,6 +211,25 @@ class ProvenanceEnforcementMiddleware(BaseHTTPMiddleware):
                 },
                 status_code=500,
             )
+        await response(scope, receive, send)
+
+
+async def _send_original(send: Send, start_message: Message, body: bytes) -> None:
+    """Send a captured response, repairing content-length after buffering."""
+    raw_headers = [
+        (key, value)
+        for key, value in start_message.get("headers", [])
+        if key.lower() != b"content-length"
+    ]
+    raw_headers.append((b"content-length", str(len(body)).encode("latin-1")))
+    await send(
+        {
+            "type": "http.response.start",
+            "status": start_message.get("status", 500),
+            "headers": raw_headers,
+        }
+    )
+    await send({"type": "http.response.body", "body": body, "more_body": False})
 
 
 async def _persist_audit(event: Dict[str, Any]) -> None:
@@ -266,5 +249,5 @@ async def _persist_audit(event: Dict[str, Any]) -> None:
             )
             session.add(ae)
             await session.commit()
-    except Exception as e:
-        logger.debug("Audit persistence unavailable: %s", e)
+    except Exception as exc:
+        logger.debug("Audit persistence unavailable: %s", exc)

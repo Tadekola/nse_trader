@@ -49,7 +49,7 @@ async def lifespan(app: FastAPI):
         logger.info("Database initialized")
     except Exception as e:
         logger.error("Database initialization failed: %s", e)
-        logger.warning("Continuing without persistent DB — audit trail will be unavailable")
+        logger.warning("Continuing without persistent DB - audit trail will be unavailable")
 
     # Start background tasks for paper trading
     import asyncio
@@ -107,11 +107,11 @@ for the Nigerian market.
     redoc_url="/redoc"
 )
 
-# ── Rate limiting ──────────────────────────────────────────────────
+# Rate limiting
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# ── CORS — whitelist origins from config ───────────────────────────
+# CORS - whitelist origins from config
 _settings = get_settings()
 _allowed_origins = [o.strip() for o in _settings.ALLOWED_ORIGINS.split(",") if o.strip()]
 app.add_middleware(
@@ -123,13 +123,10 @@ app.add_middleware(
 )
 
 # Provenance completeness enforcement (P3-3)
-# Temporarily disabled — middleware body consumption breaks ASGI streaming
-# on Windows, causing ConnectionResetError for Next.js proxy requests.
-# TODO: Re-enable after fixing middleware to use background body inspection.
-# app.add_middleware(ProvenanceEnforcementMiddleware)
+app.add_middleware(ProvenanceEnforcementMiddleware)
 
 
-# ── Protected routers (require API key in non-dev) ────────────────
+# Protected routers (require API key in non-dev)
 _auth = [Depends(require_api_key)]
 app.include_router(stocks_router, prefix="/api/v1", dependencies=_auth)
 app.include_router(recommendations_router, prefix="/api/v1", dependencies=_auth)
@@ -143,7 +140,7 @@ app.include_router(portfolios_router, prefix="/api/v1", dependencies=_auth)
 app.include_router(scanner_router, prefix="/api/v1", dependencies=_auth)
 app.include_router(scan_trigger_router, prefix="/api/v1", dependencies=_auth)
 
-# ── Public routers (no auth required) ─────────────────────────────
+# Public routers (no auth required)
 app.include_router(health_router, prefix="/api/v1")
 
 

@@ -124,7 +124,7 @@ class SimulatedProvider(MarketDataProvider):
         to ensure consistent prices within the same hour.
         """
         # Use symbol hash for consistent "random" values per stock
-        seed = int(hashlib.md5(symbol.encode()).hexdigest()[:8], 16)
+        seed = int(hashlib.sha256(symbol.encode()).hexdigest()[:8], 16)
         # Changes hourly to simulate market movement
         random.seed(seed + datetime.now(timezone.utc).hour + datetime.now(timezone.utc).day * 24)
         

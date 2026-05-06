@@ -63,8 +63,8 @@ Then open:
 
 | Service | URL |
 |---------|-----|
-| **Frontend** | http://localhost:3000 |
-| **API docs (Swagger)** | http://localhost:8000/docs |
+| **Frontend** | http://localhost:3333 |
+| **API docs (Swagger)** | http://localhost:8888/docs |
 
 If your compose setup includes automatic migrations, you're done. If not, run migrations once:
 

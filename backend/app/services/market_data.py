@@ -359,7 +359,7 @@ class MarketDataService:
         import hashlib
         
         # Use symbol hash for consistent "random" values per stock
-        seed = int(hashlib.md5(symbol.encode()).hexdigest()[:8], 16)
+        seed = int(hashlib.sha256(symbol.encode()).hexdigest()[:8], 16)
         random.seed(seed + datetime.now(timezone.utc).hour)  # Changes hourly
         
         # Calculate base price from market cap
