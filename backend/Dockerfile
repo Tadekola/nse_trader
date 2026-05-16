@@ -36,6 +36,7 @@ COPY ./app ./app
 COPY fetch_real_ohlcv.py .
 COPY run_backtest.py .
 COPY scheduler.py .
+COPY seed_real.py .
 
 # Copy Alembic migrations
 COPY alembic.ini .
